@@ -25,9 +25,6 @@ const Footer: Component = () => {
       case "Contact a Psychologist":
         navigate("/contact-psychologist");
         break;
-      case "Community":
-        navigate("/community");
-        break;
       case "Privacy Policy":
         navigate("/privacy");
         break;
@@ -67,7 +64,7 @@ const Footer: Component = () => {
           <div>
             <h4 class="font-semibold text-lg mb-4">Support</h4>
             <ul class="space-y-3 text-rose-200 text-sm">
-              {["Help Center", "Contact a Psychologist", "Community", "Privacy Policy"].map((support) => (
+              {["Help Center", "Contact a Psychologist", "Privacy Policy"].map((support) => (
                 <li
                   class="hover:text-yellow-400 transition-colors cursor-pointer"
                   onClick={() => handleFeatureClick(support)}
@@ -82,10 +79,10 @@ const Footer: Component = () => {
             <h4 class="font-semibold text-lg mb-4">Contact</h4>
             <ul class="space-y-3 text-rose-200 text-sm">
               <li class="hover:text-yellow-400 transition-colors cursor-pointer">
-                <a href="mailto:support@mindmate.app">support@mindmate.app</a>
+                <a href="https://mail.google.com/mail/?view=cm&fs=1&to=mindmate.id@gmail.com" target="_blank">mindmate.id@gmail.com</a> 
               </li>
               <li class="hover:text-yellow-400 transition-colors cursor-pointer">
-                <a href="tel:+62123456789">+62 123 456 789</a>
+                <a href="https://wa.me/6281575279212?text=Halo%2C%20saya%20ingin%20bertanya">+62 815 7527 9212</a> 
               </li>
               <li class="hover:text-yellow-400 transition-colors cursor-pointer">
                 <a href="https://www.google.com/maps/search/Purwokerto,+Indonesia" target="_blank" rel="noopener noreferrer">

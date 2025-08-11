@@ -1,6 +1,9 @@
-import { Component, createSignal, createEffect } from "solid-js";
+import { Component, createSignal, createEffect, onMount } from "solid-js";
 import { useNavigate, useLocation } from "@solidjs/router";
-import { userStore } from "../components/userStore";
+
+const API_URL = "http://127.0.0.1:8080/api/auth/login";
+const GOOGLE_AUTH_URL = "http://127.0.0.1:8080/api/auth/google";
+const GOOGLE_CALLBACK_URL = "http://127.0.0.1:8080/api/auth/google/callback";
 
 const Login: Component = () => {
   const navigate = useNavigate();
@@ -11,6 +14,7 @@ const Login: Component = () => {
   const [rememberMe, setRememberMe] = createSignal(false);
   const [errors, setErrors] = createSignal<{ [key: string]: string }>({});
   const [isLoading, setIsLoading] = createSignal(false);
+  const [isGoogleLoading, setIsGoogleLoading] = createSignal(false);
   const [isVisible, setIsVisible] = createSignal(false);
   const [isExiting, setIsExiting] = createSignal(false);
   const [navigateTo, setNavigateTo] = createSignal<string | null>(null);
@@ -18,23 +22,31 @@ const Login: Component = () => {
   const successMessage = new URLSearchParams(location.search).get("success") === "1";
   const googleAuthSuccess = new URLSearchParams(location.search).get("google-auth") === "success";
 
-  // Fade-in animation on mount
   createEffect(() => {
     setTimeout(() => setIsVisible(true), 50);
   });
 
-  // Handle navigation with fade-out animation
   createEffect(() => {
     if (navigateTo()) {
       setIsExiting(true);
-      setTimeout(() => navigate(navigateTo()!), 500); // Match transition duration
+      setTimeout(() => navigate(navigateTo()!), 500);
     }
   });
 
-  // Handle Google auth redirect
   createEffect(() => {
     if (googleAuthSuccess) {
       setNavigateTo("/dashboard");
+    }
+  });
+
+  // Handle Google OAuth callback
+  onMount(() => {
+    const urlParams = new URLSearchParams(location.search);
+    const code = urlParams.get("code");
+    const state = urlParams.get("state");
+    
+    if (code) {
+      handleGoogleCallback(code, state);
     }
   });
 
@@ -48,51 +60,125 @@ const Login: Component = () => {
 
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
-    const user = userStore.user;
-
     if (!email().trim()) newErrors.email = "Email is required";
     else if (!/\S+@\S+\.\S+/.test(email())) newErrors.email = "Invalid email format";
-    else if (email() !== user.email) newErrors.email = "Incorrect email";
-
     if (!password()) newErrors.password = "Password is required";
-    else if (password() !== user.password) newErrors.password = "Incorrect password";
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleLogin = (e: Event) => {
+  const handleLogin = async (e: Event) => {
     e.preventDefault();
 
-    // Check if email and password are non-empty and valid format before showing loading state
-    if (!email().trim() || !/\S+@\S+\.\S+/.test(email()) || !password()) {
-      validateForm();
-      return;
-    }
+    if (!validateForm()) return;
 
     setIsLoading(true);
+    setErrors({});
 
-    setTimeout(() => {
-      if (!validateForm()) {
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email(),
+          password: password(),
+        }),
+      });
+
+      const result = await res.json();
+
+      if (!res.ok) {
+        setErrors({ api: result.message || "Login failed" });
         setIsLoading(false);
         return;
       }
 
-      console.log("Login successful:", { email: email(), password: password(), rememberMe: rememberMe() });
+      // Simpan token ke localStorage (atau sessionStorage)
+      if (result.token) {
+        localStorage.setItem("token", result.token);
+        localStorage.setItem("user", JSON.stringify(result.user));
+      }
+
       setIsLoading(false);
       setNavigateTo("/dashboard");
-    }, 1500);
+    } catch (err) {
+      setErrors({ api: "Network error. Please try again." });
+      setIsLoading(false);
+    }
   };
 
-  const handleGoogleLogin = () => {
-    const googleAuthUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-    googleAuthUrl.searchParams.set("client_id", "mock-client-id");
-    googleAuthUrl.searchParams.set("redirect_uri", "http://localhost:3000/login");
-    googleAuthUrl.searchParams.set("response_type", "code");
-    googleAuthUrl.searchParams.set("scope", "profile email");
-    googleAuthUrl.searchParams.set("state", "google-auth");
+  const handleGoogleLogin = async () => {
+    setIsGoogleLoading(true);
+    setErrors({});
 
-    window.location.href = `${googleAuthUrl.toString()}?google-auth=success`;
+    try {
+      // Get Google OAuth URL from backend
+      const response = await fetch(GOOGLE_AUTH_URL, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setErrors({ api: result.message || "Failed to get Google auth URL" });
+        setIsGoogleLoading(false);
+        return;
+      }
+
+      // Redirect to Google OAuth
+      window.location.href = result.auth_url;
+    } catch (err) {
+      setErrors({ api: "Network error. Please try again." });
+      setIsGoogleLoading(false);
+    }
+  };
+
+  const handleGoogleCallback = async (code: string, state: string | null) => {
+    setIsGoogleLoading(true);
+    setErrors({});
+
+    try {
+      const params = new URLSearchParams({ code });
+      if (state) params.append("state", state);
+
+      const response = await fetch(`${GOOGLE_CALLBACK_URL}?${params}`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setErrors({ api: result.message || "Google login failed" });
+        setIsGoogleLoading(false);
+        // Clean up URL
+        window.history.replaceState({}, document.title, "/login");
+        return;
+      }
+
+      // Save token and user info
+      if (result.token) {
+        localStorage.setItem("token", result.token);
+        localStorage.setItem("user", JSON.stringify(result.user));
+      }
+
+      setIsGoogleLoading(false);
+      
+      // Show success message based on user type
+      if (result.is_new_user) {
+        // Redirect with welcome message for new users
+        setNavigateTo("/dashboard?welcome=1");
+      } else {
+        // Normal redirect for existing users
+        setNavigateTo("/dashboard");
+      }
+    } catch (err) {
+      setErrors({ api: "Network error during Google login." });
+      setIsGoogleLoading(false);
+      // Clean up URL
+      window.history.replaceState({}, document.title, "/login");
+    }
   };
 
   const handleNavigate = (path: string) => {
@@ -147,6 +233,16 @@ const Login: Component = () => {
             </div>
           )}
 
+          {isGoogleLoading() && (
+            <div class="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-2 mb-4 text-sm rounded-xl flex items-center">
+              <svg class="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="8" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Processing Google login...
+            </div>
+          )}
+
           <form onSubmit={handleLogin} class="space-y-6">
             <InputField
               label="Email"
@@ -186,9 +282,11 @@ const Login: Component = () => {
               </button>
             </div>
 
+            {errors().api && <p class="text-rose-900 text-sm bg-rose-50 p-3 rounded-lg">{errors().api}</p>}
+
             <button
               type="submit"
-              disabled={isLoading()}
+              disabled={isLoading() || isGoogleLoading()}
               class="w-full bg-rose-700 text-white py-3 px-4 rounded-xl font-semibold hover:shadow-lg hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
             >
               {isLoading() ? (
@@ -216,15 +314,28 @@ const Login: Component = () => {
 
           <button 
             onClick={handleGoogleLogin}
-            class="w-full border-2 border-gray-200 text-gray-800 py-3 px-4 rounded-xl font-semibold hover:bg-gray-50 transition-colors flex items-center justify-center space-x-3"
+            disabled={isLoading() || isGoogleLoading()}
+            class="w-full border-2 border-gray-200 text-gray-800 py-3 px-4 rounded-xl font-semibold hover:bg-gray-50 transition-colors flex items-center justify-center space-x-3 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <svg class="w-5 h-5" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-            </svg>
-            <span>Login with Google</span>
+            {isGoogleLoading() ? (
+              <>
+                <svg class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="8" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Connecting to Google...</span>
+              </>
+            ) : (
+              <>
+                <svg class="w-5 h-5" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
+                <span>Login with Google</span>
+              </>
+            )}
           </button>
 
           <p class="text-center text-gray-600 mt-6 text-sm">
@@ -331,7 +442,7 @@ const PasswordInput = (props: {
         ) : (
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268-2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
           </svg>
         )}
       </button>

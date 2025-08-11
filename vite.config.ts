@@ -4,7 +4,11 @@ import solidPlugin from 'vite-plugin-solid'
 export default defineConfig({
   plugins: [solidPlugin()],
   server: {
-    port: 3000,
-    open: true,
-  },
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8080', // Your Axum backend address
+        changeOrigin: true,
+        },
+      },
+    },
 })

@@ -12,7 +12,6 @@ import ActivitySuggestions from "../pages/ActivitySuggestions";
 
 import HelpCenter from "../pages/HelpCenter";
 import ContactPsychologist from "../pages/ContactPsychologist";
-import Community from "../pages/Community";
 import PrivacyPolicy from "../pages/PrivacyPolicy";
 
 import Mood from "../pages/Mood";
@@ -41,7 +40,6 @@ const AppRoutes: Component = () => {
 
       <Route path="/help" component={() => <App><HelpCenter /></App>} />
       <Route path="/contact-psychologist" component={() => <App><ContactPsychologist /></App>} />
-      <Route path="/community" component={() => <App><Community /></App>} />
       <Route path="/privacy" component={() => <App><PrivacyPolicy /></App>} />
 
       <Route path="/mood" component={() => <App><Mood /></App>} />

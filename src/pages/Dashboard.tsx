@@ -3,16 +3,176 @@ import { useNavigate } from "@solidjs/router";
 import * as am5 from "@amcharts/amcharts5";
 import * as am5xy from "@amcharts/amcharts5/xy";
 import * as am5themes_Animated from "@amcharts/amcharts5/themes/Animated";
-import { userStore } from "../components/userStore";
+
+const API_URL_MOODS = "http://127.0.0.1:8080/api/moods";
+const API_URL_JOURNALS = "http://127.0.0.1:8080/api/journals";
+const API_URL_PROFILE = "http://127.0.0.1:8080/api/user/profile";
+
+type MoodEntry = {
+  id: number;
+  date: string;
+  mood: string;
+  emoji: string;
+  notes: string;
+};
+
+type JournalEntry = {
+  id: number;
+  title: string;
+  content: string;
+  created_at: string;
+};
+
+type UserProfile = {
+  username: string;
+  email: string;
+};
+
+// Daily motivational quotes that rotate based on day of year
+const dailyQuotes = [
+  {
+    text: "You don't have to control your thoughts. You just have to stop letting them control you.",
+    author: "Dan Millman"
+  },
+  {
+    text: "Take your time healing, as long as you want. Nobody else knows what you've been through.",
+    author: "Abertoli"
+  },
+  {
+    text: "One small crack does not mean that you are broken, it means that you were put to the test and you didn't fall apart.",
+    author: "Linda Poindexter"
+  },
+  {
+    text: "There is hope, even when your brain tells you there isn't.",
+    author: "John Green"
+  },
+  {
+    text: "Recovery is not one and done. It is a lifelong journey that takes place one day, one step at a time.",
+    author: "Unknown"
+  },
+  {
+    text: "Self-care is how you take your power back.",
+    author: "Lalah Delia"
+  },
+  {
+    text: "My dark days made me strong. Or maybe I already was strong, and they made me prove it.",
+    author: "Emery Lord"
+  },
+  {
+    text: "You can't control everything. Sometimes you just need to relax and have faith that things will work out.",
+    author: "Kody Keplinger"
+  },
+  {
+    text: "Your illness is not your identity. Your chemistry is not your character.",
+    author: "Rick Warren"
+  },
+  {
+    text: "Happiness can be found even in the darkest of times, if one only remembers to turn on the light.",
+    author: "Albus Dumbledore"
+  },
+  {
+    text: "You, yourself, as much as anybody in the entire universe, deserve your love and affection.",
+    author: "Buddha"
+  },
+  {
+    text: "Emotional pain is not something that should be hidden away and never spoken about.",
+    author: "Steven Aitchison"
+  },
+  {
+    text: "Out of suffering have emerged the strongest souls; the most massive characters are seared with scars.",
+    author: "Kahlil Gibran"
+  },
+  {
+    text: "Let your story go. Allow yourself to be present with who you are right now.",
+    author: "Russ Kyle"
+  },
+  {
+    text: "Sometimes you climb out of bed in the morning and you think, I'm not going to make it, but you laugh inside.",
+    author: "Charles Bukowski"
+  },
+  {
+    text: "Mental health is not a destination, but a process. It's about how you drive, not where you're going.",
+    author: "Noam Shpancer"
+  },
+  {
+    text: "Healing isn't about erasing your scars or forgetting painful memories. It's about no longer allowing them to control your life.",
+    author: "Kiana Azizian"
+  },
+  {
+    text: "You are braver than you believe, stronger than you seem, and smarter than you think.",
+    author: "A.A. Milne"
+  },
+  {
+    text: "The strongest people are not those who show strength in front of us, but those who win battles we know nothing about.",
+    author: "Unknown"
+  },
+  {
+    text: "Your present circumstances don't determine where you can go; they merely determine where you start.",
+    author: "Nido Qubein"
+  }
+];
 
 const Dashboard: Component = () => {
   const navigate = useNavigate();
   const [currentTime, setCurrentTime] = createSignal(new Date());
-  const [todayMood, setTodayMood] = createSignal<number | null>(null);
+  const [todayMood, setTodayMood] = createSignal<MoodEntry | null>(null);
   const [isLoadingMood, setIsLoadingMood] = createSignal(false);
   const [isVisible, setIsVisible] = createSignal(false);
+  const [moodHistory, setMoodHistory] = createSignal<MoodEntry[]>([]);
+  const [recentJournals, setRecentJournals] = createSignal<JournalEntry[]>([]);
+  const [journalStreak, setJournalStreak] = createSignal(0);
+  const [weeklyProgress, setWeeklyProgress] = createSignal(0);
+  const [weeklyDaysCount, setWeeklyDaysCount] = createSignal(0);
+  const [loading, setLoading] = createSignal(true);
+  const [error, setError] = createSignal<string | null>(null);
+  const [user, setUser] = createSignal<UserProfile | null>(null);
+  
   let chartDiv: HTMLDivElement | undefined;
   let intervalId: number | undefined;
+
+  // Helper function to get Monday of current week
+  const getMondayOfCurrentWeek = (date: Date = new Date()) => {
+    const day = date.getDay();
+    const diff = date.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+    const monday = new Date(date);
+    monday.setDate(diff);
+    monday.setHours(0, 0, 0, 0);
+    return monday;
+  };
+
+  // Helper function to get Sunday of current week
+  const getSundayOfCurrentWeek = (date: Date = new Date()) => {
+    const monday = getMondayOfCurrentWeek(date);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+    return sunday;
+  };
+
+  // Helper function to check if a date is in current week (Monday-Sunday)
+  const isInCurrentWeek = (dateStr: string) => {
+    let checkDate: Date;
+    
+    // Handle mm-dd-yyyy format
+    if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) {
+      const [mm, dd, yyyy] = dateStr.split('-');
+      checkDate = new Date(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd));
+    } else {
+      checkDate = new Date(dateStr);
+    }
+    
+    const mondayOfWeek = getMondayOfCurrentWeek();
+    const sundayOfWeek = getSundayOfCurrentWeek();
+    
+    return checkDate >= mondayOfWeek && checkDate <= sundayOfWeek;
+  };
+
+  // Calculate weekly progress for current week (Monday-Sunday)
+  const calculateWeeklyProgress = (moods: MoodEntry[]) => {
+    const currentWeekMoods = moods.filter(mood => isInCurrentWeek(mood.date));
+    setWeeklyDaysCount(currentWeekMoods.length);
+    setWeeklyProgress(Math.round((currentWeekMoods.length / 7) * 100));
+  };
 
   // Initialize visibility effect
   createEffect(() => {
@@ -26,77 +186,300 @@ const Dashboard: Component = () => {
     }, 1000);
   });
 
-  // Initialize AmCharts 5 for mood chart
-  onMount(() => {
-    if (chartDiv) {
-      try {
-        const root = am5.Root.new(chartDiv);
-        root.setThemes([am5themes_Animated.default.new(root)]);
+  // Fetch data from backend
+  createEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setError("Belum login. Silakan login ulang.");
+      setLoading(false);
+      return;
+    }
 
-        const chart = root.container.children.push(
-          am5xy.XYChart.new(root, {
-            panX: false,
-            panY: false,
-            wheelX: "none",
-            wheelY: "none",
-            paddingLeft: 0,
-            paddingRight: 0,
-            paddingTop: 0,
-            paddingBottom: 0,
-          })
-        );
-
-        const xAxis = chart.xAxes.push(
-          am5xy.CategoryAxis.new(root, {
-            categoryField: "day",
-            renderer: am5xy.AxisRendererX.new(root, {
-              minGridDistance: 30,
-              cellStartLocation: 0.1,
-              cellEndLocation: 0.9,
-            }),
-          })
-        );
-
-        const yAxis = chart.yAxes.push(
-          am5xy.ValueAxis.new(root, {
-            min: 0,
-            max: 5,
-            renderer: am5xy.AxisRendererY.new(root, {}),
-          })
-        );
-
-        const series = chart.series.push(
-          am5xy.ColumnSeries.new(root, {
-            name: "Mood",
-            xAxis: xAxis,
-            yAxis: yAxis,
-            valueYField: "mood",
-            categoryXField: "day",
-          })
-        );
-
-        const data = [
-          { day: "Mon", mood: 4 },
-          { day: "Tue", mood: 3 },
-          { day: "Wed", mood: 5 },
-          { day: "Thu", mood: 4 },
-          { day: "Fri", mood: 2 },
-          { day: "Sat", mood: 5 },
-          { day: "Sun", mood: 4 },
-        ];
-
-        xAxis.data.setAll(data);
-        series.data.setAll(data);
-
-        series.set("fill", am5.color("#BE123C")); // rose-700
-        series.columns.template.set("fill", am5.color("#BE123C")); // rose-700
-
-        onCleanup(() => {
-          if (root) root.dispose();
-        });
-      } catch (error) {
-        console.error("Failed to initialize AmCharts:", error);
+    // Fetch user profile data
+    fetch(API_URL_PROFILE, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
       }
+    })
+    .then(async (res) => {
+      if (!res.ok) throw new Error("Failed to fetch user profile");
+      return res.json();
+    })
+    .then((data) => {
+      setUser(data);
+    })
+    .catch(() => {
+      setError("Gagal mengambil data user.");
+    });
+
+    // Fetch mood data
+    fetch(API_URL_MOODS, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      }
+    })
+    .then(async (res) => {
+      if (!res.ok) throw new Error("Failed to fetch moods");
+      return res.json();
+    })
+    .then((data) => {
+      const moods = Array.isArray(data) ? data : data.moods || [];
+      setMoodHistory(moods);
+      
+      // Check for today's mood - format as mm-dd-yyyy
+      const today = new Date();
+      const todayFormatted = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}-${today.getFullYear()}`;
+      const todaysMood = moods.find((mood: MoodEntry) => mood.date === todayFormatted);
+      if (todaysMood) {
+        setTodayMood(todaysMood);
+      }
+
+      // Calculate weekly progress for current week (Monday-Sunday)
+      calculateWeeklyProgress(moods);
+    })
+    .catch(() => {
+      setError("Gagal mengambil data mood.");
+    });
+
+    // Fetch journal data
+    fetch(API_URL_JOURNALS, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      }
+    })
+    .then(async (res) => {
+      if (!res.ok) throw new Error("Failed to fetch journals");
+      return res.json();
+    })
+    .then((data) => {
+      const journals = Array.isArray(data) ? data : data.journals || [];
+      setRecentJournals(journals.slice(0, 3)); // Get latest 3 journals
+      
+      // Calculate journal streak
+      calculateJournalStreak(journals);
+      setLoading(false);
+    })
+    .catch(() => {
+      setError("Gagal mengambil data journal.");
+      setLoading(false);
+    });
+  });
+
+  // Calculate journal writing streak
+  const calculateJournalStreak = (journals: JournalEntry[]) => {
+    if (journals.length === 0) {
+      setJournalStreak(0);
+      return;
+    }
+
+    // Sort journals by date (newest first)
+    const sortedJournals = journals.sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    let streak = 0;
+    let currentDate = new Date();
+    currentDate.setHours(0, 0, 0, 0);
+
+    for (const journal of sortedJournals) {
+      const journalDate = new Date(journal.created_at);
+      journalDate.setHours(0, 0, 0, 0);
+
+      const diffTime = currentDate.getTime() - journalDate.getTime();
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+      if (diffDays === streak || (streak === 0 && diffDays === 0)) {
+        streak++;
+        currentDate.setDate(currentDate.getDate() - 1);
+      } else {
+        break;
+      }
+    }
+
+    setJournalStreak(streak);
+  };
+
+  // Chart variables
+  let chartRoot: am5.Root | undefined;
+  let chartSeries: am5xy.ColumnSeries | undefined;
+  let xAxis: am5xy.CategoryAxis<am5xy.AxisRenderer> | undefined;
+
+  // Generate chart data for the last 7 days
+  const generateWeekChartData = () => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const data = [];
+    const today = new Date();
+
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(today);
+      date.setDate(today.getDate() - i);
+      // Format as mm-dd-yyyy
+      const dateStr = `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}-${date.getFullYear()}`;
+      const dayName = days[date.getDay()];
+
+      const moodEntry = moodHistory().find(mood => mood.date === dateStr);
+      const moodValue = moodEntry ? getMoodValue(moodEntry.mood) : null; // Use null for missing data
+
+      data.push({
+        day: dayName,
+        mood: moodValue
+      });
+    }
+
+    return data;
+  };
+
+  // Convert mood string to numeric value for chart
+  const getMoodValue = (mood: string) => {
+    const moodMap: { [key: string]: number } = {
+      'very sad': 1,
+      'sad': 2,
+      'neutral': 3,
+      'happy': 4,
+      'very happy': 5
+    };
+    return moodMap[mood] || 0;
+  };
+
+  // Initialize AmCharts 5 for mood chart
+  const initializeMoodChart = () => {
+    if (!chartDiv) {
+      console.log("chartDiv not found");
+      return;
+    }
+
+    try {
+      // Dispose existing chart
+      if (chartRoot) {
+        chartRoot.dispose();
+        chartRoot = undefined;
+        chartSeries = undefined;
+        xAxis = undefined;
+      }
+
+      console.log("Initializing mood chart...");
+      
+      chartRoot = am5.Root.new(chartDiv);
+      chartRoot.setThemes([am5themes_Animated.default.new(chartRoot)]);
+
+      const chart = chartRoot.container.children.push(
+        am5xy.XYChart.new(chartRoot, {
+          panX: false,
+          panY: false,
+          wheelX: "none",
+          wheelY: "none",
+          paddingLeft: 20,
+          paddingRight: 20,
+          paddingTop: 20,
+          paddingBottom: 20,
+        })
+      );
+
+      // Create renderers
+      const xRenderer = am5xy.AxisRendererX.new(chartRoot, {
+        minGridDistance: 30,
+        cellStartLocation: 0.1,
+        cellEndLocation: 0.9,
+      });
+      
+      const yRenderer = am5xy.AxisRendererY.new(chartRoot, {});
+      
+      // Configure grid appearance
+      xRenderer.grid.template.setAll({
+        strokeOpacity: 0.1
+      });
+      
+      yRenderer.grid.template.setAll({
+        strokeOpacity: 0.1
+      });
+
+      // Create axes
+      xAxis = chart.xAxes.push(
+        am5xy.CategoryAxis.new(chartRoot, {
+          categoryField: "day",
+          renderer: xRenderer
+        })
+      );
+
+      const yAxis = chart.yAxes.push(
+        am5xy.ValueAxis.new(chartRoot, {
+          min: 1,
+          max: 5,
+          strictMinMax: true,
+          renderer: yRenderer
+        })
+      );
+
+      // Create series
+      chartSeries = chart.series.push(
+        am5xy.ColumnSeries.new(chartRoot, {
+          name: "Mood",
+          xAxis: xAxis,
+          yAxis: yAxis,
+          valueYField: "mood",
+          categoryXField: "day",
+        })
+      );
+
+      chartSeries.set("fill", am5.color("#BE123C")); // rose-700
+      chartSeries.columns.template.set("fill", am5.color("#BE123C")); // rose-700
+
+      // Add tooltips
+      chartSeries.set("tooltip", am5.Tooltip.new(chartRoot, {
+        labelText: "Mood: {valueY}\nDay: {categoryX}"
+      }));
+
+      console.log("Mood chart initialized successfully");
+      
+      // Update with current data if available
+      updateMoodChart();
+      
+    } catch (error) {
+      console.error("Failed to initialize Mood Chart:", error);
+    }
+  };
+
+  // Update mood chart with data from backend
+  const updateMoodChart = () => {
+    if (!chartSeries || !xAxis) {
+      console.log("Chart not initialized yet");
+      return;
+    }
+
+    try {
+      console.log("Updating mood chart with mood history:", moodHistory().length, "entries");
+      
+      const weekData = generateWeekChartData();
+      console.log("Generated week data:", weekData);
+      
+      xAxis.data.setAll(weekData);
+      chartSeries.data.setAll(weekData);
+      
+    } catch (error) {
+      console.error("Failed to update mood chart:", error);
+    }
+  };
+
+  // Initialize chart when component mounts
+  onMount(() => {
+    setTimeout(() => {
+      initializeMoodChart();
+    }, 200);
+  });
+
+  // Update chart when mood history changes
+  createEffect(() => {
+    const moods = moodHistory();
+    if (moods.length >= 0) { // Update even with 0 length to show empty chart
+      updateMoodChart();
+      // Recalculate weekly progress when mood history changes
+      calculateWeeklyProgress(moods);
     }
   });
 
@@ -105,32 +488,107 @@ const Dashboard: Component = () => {
   });
 
   const moodOptions = [
-    { emoji: '😢', label: 'Very Sad', color: 'bg-rose-400', value: 1, textColor: 'text-red-600' },
-    { emoji: '😔', label: 'Sad', color: 'bg-rose-300', value: 2, textColor: 'text-orange-600' },
-    { emoji: '😐', label: 'Neutral', color: 'bg-gray-400', value: 3, textColor: 'text-yellow-600' },
-    { emoji: '😊', label: 'Happy', color: 'bg-rose-300', value: 4, textColor: 'text-lime-600' },
-    { emoji: '😄', label: 'Very Happy', color: 'bg-rose-400', value: 5, textColor: 'text-green-600' }
+    { emoji: '😢', label: 'Very Sad', color: 'bg-rose-400', value: 'very sad', textColor: 'text-red-600' },
+    { emoji: '😔', label: 'Sad', color: 'bg-rose-300', value: 'sad', textColor: 'text-orange-600' },
+    { emoji: '😐', label: 'Neutral', color: 'bg-gray-400', value: 'neutral', textColor: 'text-yellow-600' },
+    { emoji: '😊', label: 'Happy', color: 'bg-rose-300', value: 'happy', textColor: 'text-lime-600' },
+    { emoji: '😄', label: 'Very Happy', color: 'bg-rose-400', value: 'very happy', textColor: 'text-green-600' }
   ];
 
-  const recentJournals = [
-    { id: 1, title: `${userStore.user.name}'s Productive Monday`, date: '2025-06-24', preview: `Today ${userStore.user.name} managed to finish all tasks and felt really accomplished...`, mood: 4 },
-    { id: 2, title: `${userStore.user.name}'s Weekend Reflections`, date: '2025-06-23', preview: `${userStore.user.name} spent time with family and friends. It was refreshing...`, mood: 5 },
-    { id: 3, title: `${userStore.user.name}'s Challenges`, date: '2025-06-22', preview: `${userStore.user.name} had some difficulties but found solutions...`, mood: 3 }
-  ];
+  const handleMoodSelect = async (moodData: typeof moodOptions[0]) => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setError("Belum login. Silakan login ulang.");
+      return;
+    }
 
-  const recommendations = [
-    { icon: '🧘', title: 'Morning Meditation', description: '10-minute guided meditation to start your day', category: 'Mindfulness' },
-    { icon: '🚶', title: 'Evening Walk', description: 'Take a peaceful walk in nature', category: 'Physical' },
-    { icon: '📖', title: 'Gratitude Writing', description: 'Write down 3 things you\'re grateful for', category: 'Reflection' },
-    { icon: '🎵', title: 'Calming Music', description: 'Listen to relaxing instrumental music', category: 'Relaxation' }
-  ];
-
-  const handleMoodSelect = (value: number) => {
     setIsLoadingMood(true);
-    setTimeout(() => {
-      setTodayMood(value);
-      setIsLoadingMood(false);
-    }, 1500);
+    try {
+      const res = await fetch(API_URL_MOODS, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          date: (() => {
+            const today = new Date();
+            return `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}-${today.getFullYear()}`;
+          })(),
+          mood: moodData.value,
+          emoji: moodData.emoji,
+          notes: "",
+        }),
+      });
+
+      if (!res.ok) {
+        const result = await res.json();
+        setError(result.message || "You can only submit one mood entry per day.");
+        setIsLoadingMood(false);
+        return;
+      }
+
+      const newMood = await res.json();
+      setTodayMood(newMood);
+      const updatedMoodHistory = [newMood, ...moodHistory().filter(m => m.date !== newMood.date)];
+      setMoodHistory(updatedMoodHistory);
+      // Recalculate weekly progress with new mood
+      calculateWeeklyProgress(updatedMoodHistory);
+      setError(null);
+    } catch {
+      setError("Gagal menyimpan mood. Silakan coba lagi.");
+    }
+    setIsLoadingMood(false);
+  };
+
+  // Clean up chart on unmount
+  onCleanup(() => {
+    if (chartRoot) {
+      chartRoot.dispose();
+    }
+    if (intervalId) clearInterval(intervalId);
+  });
+
+  // Get daily quote based on day of year
+  const getDailyQuote = () => {
+    const today = new Date();
+    const start = new Date(today.getFullYear(), 0, 0);
+    const diff = today.getTime() - start.getTime();
+    const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
+    return dailyQuotes[dayOfYear % dailyQuotes.length];
+  };
+
+  // Get dynamic streak message based on streak count
+  const getStreakMessage = () => {
+    const streak = journalStreak();
+    if (streak === 0) return "Start your journey! ✨";
+    if (streak === 1) return "Great start! 🌱";
+    if (streak <= 3) return "Building momentum! 💪";
+    if (streak <= 7) return "You're doing great! 🌟";
+    if (streak <= 14) return "Two weeks strong! 🔥";
+    if (streak <= 30) return "Incredible consistency! 🚀";
+    if (streak <= 60) return "Absolutely amazing! 🏆";
+    return "You're a legend! 👑";
+  };
+
+  // Get time-based greeting
+  const getTimeBasedGreeting = () => {
+    const hour = currentTime().getHours();
+    if (hour < 12) return "Good Morning";
+    if (hour < 17) return "Good Afternoon";
+    return "Good Evening";
+  };
+
+  // Get current week range display
+  const getCurrentWeekRange = () => {
+    const monday = getMondayOfCurrentWeek();
+    const sunday = getSundayOfCurrentWeek();
+    
+    const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+    const mondayStr = monday.toLocaleDateString('en-US', options);
+    const sundayStr = sunday.toLocaleDateString('en-US', options);
+    
+    return `${mondayStr} - ${sundayStr}`;
   };
 
   const formatTime = (date: Date) => {
@@ -150,13 +608,21 @@ const Dashboard: Component = () => {
     });
   };
 
+  const formatJournalDate = (dateStr: string) => {
+    if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) {
+      const [mm, dd, yyyy] = dateStr.split('-');
+      return `${mm}/${dd}/${yyyy}`;
+    }
+    return new Date(dateStr).toLocaleDateString();
+  };
+
   return (
-    <div class="min-h-screen min-h-screen bg-gradient-to-br from-rose-50 to-pink-50 flex flex-col">
+    <div class="min-h-screen bg-gradient-to-br from-rose-50 to-pink-50 flex flex-col">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow">
         <div class={`transition-all duration-1000 ${isVisible() ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
           <div class="mb-8">
             <h1 class="text-3xl md:text-4xl font-bold text-rose-700 mb-2">
-              Good Morning, {userStore.user.name}! 👋
+              {getTimeBasedGreeting()}, {user()?.username || 'User'}! 👋
             </h1>
             <p class="text-gray-600 text-lg">
               {formatDate(currentTime())} • {formatTime(currentTime())}
@@ -166,17 +632,18 @@ const Dashboard: Component = () => {
             </p>
           </div>
 
-          <div class="flex items-center p-4 mb-4 text-sm text-gray-800 rounded-lg bg-yellow-200 border border-gray-200" role="alert">
-            <svg class="flex-shrink-0 inline w-4 h-4 me-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5ZM9.5 4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM12 15H8a1 1 0 0 1 0-2h1v-3H8a1 1 0 0 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 0 1 0 2Z"/>
-            </svg>
-            <span class="sr-only">Info</span>
-            <div>
-              <span class="font-medium">Daily Tip:</span> Taking just 5 minutes for deep breathing can significantly improve your mood and reduce stress levels.
+          {error() && (
+            <div class="flex items-center p-4 mb-4 text-sm text-red-800 rounded-lg bg-red-50 border border-red-200" role="alert">
+              <svg class="flex-shrink-0 inline w-4 h-4 me-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5ZM9.5 4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM12 15H8a1 1 0 0 1 0-2h1v-3H8a1 1 0 0 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 0 1 0 2Z"/>
+              </svg>
+              <span class="sr-only">Error</span>
+              <div>{error()}</div>
             </div>
-          </div>
+          )}
 
           <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            {/* Today's Mood Card */}
             <div class="max-w-sm p-6 bg-white/80 border border-gray-200 rounded-lg shadow-lg backdrop-blur-xl hover:shadow-xl transition-all duration-300">
               <div class="flex items-center justify-between mb-4">
                 <div class="flex items-center">
@@ -190,49 +657,28 @@ const Dashboard: Component = () => {
                     <p class="text-sm text-gray-600">Track your feelings</p>
                   </div>
                 </div>
-                {todayMood() && <span class="text-3xl">{moodOptions[todayMood()! - 1]?.emoji}</span>}
+                {todayMood() && <span class="text-3xl">{todayMood()!.emoji}</span>}
               </div>
 
               {!todayMood() ? (
                 <div class="space-y-3">
-                  <p class="text-sm text-gray-600 mb-3">How do you feel right now?</p>
-                  <div class="flex justify-between">
-                    {moodOptions.map((mood) => (
-                      <button
-                        onClick={() => handleMoodSelect(mood.value)}
-                        disabled={isLoadingMood()}
-                        class={`w-10 h-10 rounded-full hover:scale-110 transition-transform duration-200 flex items-center justify-center text-xl hover:shadow-lg focus:ring-4 focus:ring-rose-200 ${
-                          isLoadingMood() ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                        title={mood.label}
-                      >
-                        {isLoadingMood() ? (
-                          <svg class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="8" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        ) : (
-                          mood.emoji
-                        )}
-                      </button>
-                    ))}
+                  <div class="text-center py-4">
+                    <p class="text-gray-600 mb-3">You haven't added your mood today</p>
                   </div>
                 </div>
               ) : (
                 <div class="space-y-3">
-                  <p class={`${moodOptions[todayMood()! - 1]?.textColor} font-medium`}>
-                    Feeling {moodOptions[todayMood()! - 1]?.label}
+                  <p class={`${moodOptions.find(m => m.value === todayMood()!.mood)?.textColor} font-medium`}>
+                    Feeling {moodOptions.find(m => m.value === todayMood()!.mood)?.label}
                   </p>
-                  <button 
-                    onClick={() => setTodayMood(null)}
-                    class="text-sm text-gray-600 hover:text-rose-900 transition-colors"
-                  >
-                    Change mood
-                  </button>
+                  {todayMood()!.notes && (
+                    <p class="text-sm text-gray-600 italic">"{todayMood()!.notes}"</p>
+                  )}
                 </div>
               )}
             </div>
 
+            {/* Journal Streak Card */}
             <div class="max-w-sm p-6 bg-white/80 border border-gray-200 rounded-lg shadow-lg backdrop-blur-xl hover:shadow-xl transition-all duration-300">
               <div class="flex items-center mb-4">
                 <div class="inline-flex items-center justify-center w-10 h-10 text-white bg-gradient-to-r from-orange-400 to-orange-500 rounded-lg">
@@ -246,11 +692,14 @@ const Dashboard: Component = () => {
                 </div>
               </div>
               <div class="space-y-2">
-                <div class="text-3xl font-bold text-orange-600">7 days</div>
-                <p class="text-sm text-gray-600">You're on fire! 🔥</p>
+                <div class="text-3xl font-bold text-orange-600">{journalStreak()} days</div>
+                <p class="text-sm text-gray-600">
+                  {getStreakMessage()}
+                </p>
               </div>
             </div>
 
+            {/* Weekly Goal Card */}
             <div class="max-w-sm p-6 bg-white/80 border border-gray-200 rounded-lg shadow-lg backdrop-blur-xl hover:shadow-xl transition-all duration-300">
               <div class="flex items-center mb-4">
                 <div class="inline-flex items-center justify-center w-10 h-10 text-white bg-gradient-to-r from-purple-400 to-purple-500 rounded-lg">
@@ -260,16 +709,16 @@ const Dashboard: Component = () => {
                 </div>
                 <div class="ml-3">
                   <h5 class="mb-1 text-lg font-medium text-gray-800">Weekly Goal</h5>
-                  <p class="text-sm text-gray-600">Progress tracking</p>
+                  <p class="text-sm text-gray-600">{getCurrentWeekRange()}</p>
                 </div>
               </div>
               <div class="space-y-3">
                 <div class="flex justify-between items-center">
                   <span class="text-sm text-gray-600">Mood tracking</span>
-                  <span class="text-sm font-medium text-purple-700">6/7 days</span>
+                  <span class="text-sm font-medium text-purple-700">{weeklyDaysCount()}/7 days</span>
                 </div>
                 <div class="w-full bg-gray-200 rounded-full h-2.5">
-                  <div class="bg-gradient-to-r from-purple-400 to-purple-500 h-2.5 rounded-full transition-all duration-500" style="width: 86%"></div>
+                  <div class="bg-gradient-to-r from-purple-400 to-purple-500 h-2.5 rounded-full transition-all duration-500" style={`width: ${weeklyProgress()}%`}></div>
                 </div>
               </div>
             </div>
@@ -277,6 +726,7 @@ const Dashboard: Component = () => {
 
           <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div class="lg:col-span-2 space-y-8">
+              {/* Mood Chart */}
               <div class="max-w-full p-6 bg-white/80 border border-gray-200 rounded-lg shadow-lg backdrop-blur-xl">
                 <div class="flex items-center justify-between mb-6">
                   <h5 class="text-xl font-medium text-gray-800">This Week's Mood</h5>
@@ -297,6 +747,7 @@ const Dashboard: Component = () => {
                 ></div>
               </div>
 
+              {/* Recent Journal Entries */}
               <div class="max-w-full p-6 bg-white/80 border border-gray-200 rounded-lg shadow-lg backdrop-blur-xl">
                 <div class="flex items-center justify-between mb-6">
                   <h5 class="text-xl font-medium text-gray-800">Recent Journal Entries</h5>
@@ -308,70 +759,58 @@ const Dashboard: Component = () => {
                   </button>
                 </div>
 
-                <div class="relative overflow-x-auto shadow-md sm:rounded-lg">
-                  <table class="w-full text-sm text-left rtl:text-right text-gray-600">
-                    <thead class="text-xs text-gray-700 uppercase bg-gray-50">
-                      <tr>
-                        <th scope="col" class="px-6 py-3">Title</th>
-                        <th scope="col" class="px-6 py-3">Date</th>
-                        <th scope="col" class="px-6 py-3">Mood</th>
-                        <th scope="col" class="px-6 py-3">Preview</th>
-                        <th scope="col" class="px-6 py-3">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {recentJournals.map((journal) => (
-                        <tr class="bg-white/50 border-b hover:bg-gray-50 transition-colors">
-                          <th scope="row" class="px-6 py-4 font-medium text-gray-800 whitespace-nowrap">
-                            {journal.title}
-                          </th>
-                          <td class="px-6 py-4">
-                            {new Date(journal.date).toLocaleDateString()}
-                          </td>
-                          <td class="px-6 py-4">
-                            <span class="text-lg">{moodOptions[journal.mood - 1]?.emoji}</span>
-                          </td>
-                          <td class="px-6 py-4 max-w-xs truncate">
-                            {journal.preview}
-                          </td>
-                          <td class="px-6 py-4">
-                            <button 
-                              onClick={() => navigate(`/journal/${journal.id}`)}
-                              class="font-medium text-rose-700 hover:text-rose-900 hover:underline"
-                            >
-                              Read
-                            </button>
-                          </td>
+                {loading() ? (
+                  <div class="text-gray-600">Loading...</div>
+                ) : (
+                  <div class="relative overflow-x-auto shadow-md sm:rounded-lg">
+                    <table class="w-full text-sm text-left rtl:text-right text-gray-600">
+                      <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                        <tr>
+                          <th scope="col" class="px-6 py-3">Title</th>
+                          <th scope="col" class="px-6 py-3">Date</th>
+                          <th scope="col" class="px-6 py-3">Preview</th>
+                          <th scope="col" class="px-6 py-3">Action</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {recentJournals().length > 0 ? (
+                          recentJournals().map((journal) => (
+                            <tr class="bg-white/50 border-b hover:bg-gray-50 transition-colors">
+                              <th scope="row" class="px-6 py-4 font-medium text-gray-800 whitespace-nowrap">
+                                {journal.title}
+                              </th>
+                              <td class="px-6 py-4">
+                                {formatJournalDate(journal.created_at)}
+                              </td>
+                              <td class="px-6 py-4 max-w-xs truncate">
+                                {journal.content.length > 50 ? journal.content.slice(0, 50) + "..." : journal.content}
+                              </td>
+                              <td class="px-6 py-4">
+                                <button 
+                                  onClick={() => navigate(`/journal/${journal.id}`)}
+                                  class="font-medium text-rose-700 hover:text-rose-900 hover:underline"
+                                >
+                                  Read
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={4} class="px-6 py-4 text-center text-gray-500">
+                              No journal entries found.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
 
             <div class="space-y-8">
-              <div class="max-w-sm p-6 bg-white/80 border border-gray-200 rounded-lg shadow-lg backdrop-blur-xl">
-                <h5 class="mb-6 text-xl font-medium text-gray-800">Recommended for You</h5>
-                
-                <div class="space-y-4">
-                  {recommendations.map((rec, index) => (
-                    <div class="p-4 bg-gradient-to-r from-rose-100 to-rose-100 rounded-xl border border-gray-200 hover:shadow-md transition-all duration-300 cursor-pointer">
-                      <div class="flex items-start space-x-3">
-                        <div class="text-2xl">{rec.icon}</div>
-                        <div class="flex-1">
-                          <h6 class="font-medium text-gray-800 mb-1">{rec.title}</h6>
-                          <p class="text-sm text-gray-600 mb-2">{rec.description}</p>
-                          <span class="inline-flex items-center px-2 py-1 text-xs font-medium text-rose-700 bg-rose-100 rounded-full">
-                            {rec.category}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
+              {/* Quick Actions */}
               <div class="max-w-sm p-6 bg-white/80 border border-gray-200 rounded-lg shadow-lg backdrop-blur-xl">
                 <h5 class="mb-6 text-xl font-medium text-gray-800">Quick Actions</h5>
                 
@@ -387,7 +826,7 @@ const Dashboard: Component = () => {
                     onClick={() => navigate('/mood')}
                     class="w-full py-2.5 px-5 text-sm font-medium text-rose-700 focus:outline-none bg-white rounded-lg border border-gray-200 hover:bg-rose-100 hover:text-rose-900 focus:z-10 focus:ring-4 focus:ring-rose-200"
                   >
-                    Update Mood
+                    Add Mood
                   </button>
                   
                   <button 
@@ -396,16 +835,27 @@ const Dashboard: Component = () => {
                   >
                     View Statistics
                   </button>
+
+                  <button 
+                    onClick={() => navigate('/calendar')}
+                    class="w-full py-2.5 px-5 text-sm font-medium text-rose-700 focus:outline-none bg-white rounded-lg border border-gray-200 hover:bg-rose-100 hover:text-rose-900 focus:z-10 focus:ring-4 focus:ring-rose-200"
+                  >
+                    View Calendar
+                  </button>
                 </div>
               </div>
 
+              {/* Daily Motivation */}
               <div class="max-w-sm p-6 bg-gradient-to-r from-rose-700 to-rose-800 rounded-lg shadow-lg text-white">
                 <div class="text-center">
                   <div class="text-4xl mb-4">💪</div>
-                  <h5 class="mb-2 text-lg font-medium">Daily Motivation</h5>
-                  <p class="text-rose-100 italic text-sm leading-relaxed">
-                    "Every small step you take towards better mental health is a victory worth celebrating."
-                  </p>
+                  <h5 class="mb-4 text-lg font-medium">Daily Motivation</h5>
+                  <blockquote class="text-rose-100 italic text-sm leading-relaxed mb-3">
+                    "{getDailyQuote().text}"
+                  </blockquote>
+                  <cite class="text-rose-200 text-xs font-medium">
+                    — {getDailyQuote().author}
+                  </cite>
                 </div>
               </div>
             </div>

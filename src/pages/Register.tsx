@@ -1,25 +1,7 @@
 import { Component, createSignal, createEffect } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 
-interface User {
-  name: string;
-  email: string;
-  avatar: string | null;
-}
-
-const userStore: {
-  user: User;
-  updateUser: (name: string, email: string, avatar: string | null) => void;
-} = {
-  user: {
-    name: "Sarah",
-    email: "sarah@example.com",
-    avatar: null,
-  },
-  updateUser(name, email, avatar) {
-    this.user = { name, email, avatar };
-  },
-};
+const API_URL = "http://127.0.0.1:8080/api/auth/register";
 
 const Register: Component = () => {
   const navigate = useNavigate();
@@ -40,16 +22,14 @@ const Register: Component = () => {
   const [isExiting, setIsExiting] = createSignal(false);
   const [navigateTo, setNavigateTo] = createSignal<string | null>(null);
 
-  // Fade-in animation on mount
   createEffect(() => {
     setTimeout(() => setIsVisible(true), 50);
   });
 
-  // Handle navigation with fade-out animation
   createEffect(() => {
     if (navigateTo()) {
       setIsExiting(true);
-      setTimeout(() => navigate(navigateTo()!), 500); // Match transition duration
+      setTimeout(() => navigate(navigateTo()!), 500);
     }
   });
 
@@ -69,7 +49,7 @@ const Register: Component = () => {
     else if (!/\S+@\S+\.\S+/.test(data.email)) newErrors.email = "Invalid email format";
 
     if (!data.password) newErrors.password = "Password is required";
-    else if (data.password.length < 8) newErrors.password = "Minimum 8 characters";
+    else if (data.password.length < 6) newErrors.password = "Minimum 6 characters";
 
     if (!data.confirmPassword) newErrors.confirmPassword = "Confirmation required";
     else if (data.password !== data.confirmPassword) newErrors.confirmPassword = "Passwords do not match";
@@ -84,38 +64,41 @@ const Register: Component = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleRegister = (e: Event) => {
+  const handleRegister = async (e: Event) => {
     e.preventDefault();
 
-    // Check if all required fields are non-empty and email is valid format before showing loading state
-    const data = formData();
-    if (
-      !data.fullName.trim() ||
-      !data.email.trim() ||
-      !/\S+@\S+\.\S+/.test(data.email) ||
-      !data.password ||
-      !data.confirmPassword ||
-      !data.age ||
-      !data.gender ||
-      !agreeTerms()
-    ) {
-      validateForm();
-      return;
-    }
+    if (!validateForm()) return;
 
     setIsLoading(true);
+    setErrors({});
 
-    setTimeout(() => {
-      if (!validateForm()) {
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: formData().fullName,
+          email: formData().email,
+          password: formData().password,
+          age: parseInt(formData().age),
+          gender: formData().gender,
+        }),
+      });
+
+      const result = await res.json();
+
+      if (!res.ok) {
+        setErrors({ api: result.message || "Registration failed" });
         setIsLoading(false);
         return;
       }
 
-      // Simulate registration by updating userStore
-      userStore.updateUser(formData().fullName, formData().email, null);
       setIsLoading(false);
       setNavigateTo("/login?success=1");
-    }, 1500);
+    } catch (err) {
+      setErrors({ api: "Network error. Please try again." });
+      setIsLoading(false);
+    }
   };
 
   const handleNavigate = (path: string) => {
@@ -257,6 +240,7 @@ const Register: Component = () => {
               </label>
             </div>
             {errors().terms && <p class="text-rose-900 text-sm">{errors().terms}</p>}
+            {errors().api && <p class="text-rose-900 text-sm">{errors().api}</p>}
 
             <button
               type="submit"
@@ -377,7 +361,7 @@ const PasswordInput = (props: {
         ) : (
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268-2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
           </svg>
         )}
       </button>

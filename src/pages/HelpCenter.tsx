@@ -1,15 +1,20 @@
 import { Component, createSignal, createEffect, onCleanup } from "solid-js";
 import { gsap } from "gsap";
+import emailjs from "@emailjs/browser";
+
+const SERVICE_ID = "service_70v41ij";
+const TEMPLATE_ID = "template_9hoh2ao";
+const PUBLIC_KEY = "RckdfFzbSyyuZgKXP";
 
 const HelpCenter: Component = () => {
   const [formData, setFormData] = createSignal({ name: "", email: "", message: "" });
   const [errors, setErrors] = createSignal({ name: false, email: false, message: false });
   const [showSuccess, setShowSuccess] = createSignal(false);
+  const [isLoading, setIsLoading] = createSignal(false); // Added loading state
 
   const handleInputChange = (e: Event) => {
     const target = e.target as HTMLInputElement | HTMLTextAreaElement;
     setFormData({ ...formData(), [target.name]: target.value });
-    // Reset error state when user types
     setErrors({ ...errors(), [target.name]: false });
   };
 
@@ -28,10 +33,30 @@ const HelpCenter: Component = () => {
     setErrors(newErrors);
 
     if (!newErrors.name && !newErrors.email && !newErrors.message) {
-      console.log("Form submitted:", formData());
-      setShowSuccess(true);
-      setFormData({ name: "", email: "", message: "" });
-      setTimeout(() => setShowSuccess(false), 3000); // Hide success message after 3 seconds
+      setIsLoading(true); // Set loading state to true
+      emailjs
+        .send(
+          SERVICE_ID,
+          TEMPLATE_ID,
+          {
+            from_name: formData().name,
+            from_email: formData().email,
+            message: formData().message,
+            to_email: "placeholder@example.com",
+          },
+          PUBLIC_KEY
+        )
+        .then(() => {
+          setShowSuccess(true);
+          setFormData({ name: "", email: "", message: "" });
+          setTimeout(() => setShowSuccess(false), 3000);
+        })
+        .catch((error) => {
+          console.error("EmailJS Error:", error);
+        })
+        .finally(() => {
+          setIsLoading(false); // Reset loading state
+        });
     }
   };
 
@@ -41,7 +66,6 @@ const HelpCenter: Component = () => {
     const faqSection = document.querySelector(".faq-section");
     const formSection = document.querySelector(".form-section");
 
-    // In animations for all elements
     if (container) {
       gsap.from(container, {
         y: 100,
@@ -50,7 +74,6 @@ const HelpCenter: Component = () => {
         ease: "power3.out",
         delay: 0,
       });
-      // Pulsating shadow effect
       gsap.to(container, {
         boxShadow: "0 0 10px rgba(251, 113, 133, 0.5)",
         duration: 1,
@@ -94,7 +117,6 @@ const HelpCenter: Component = () => {
     const faqSection = document.querySelector(".faq-section");
     const formSection = document.querySelector(".form-section");
 
-    // Out animations for all elements
     if (container) {
       gsap.to(container, {
         y: 100,
@@ -140,23 +162,22 @@ const HelpCenter: Component = () => {
   });
 
   const bubblePositions = [
-    { left: '5%', top: '10%' },  // Left, top
-    { left: '10%', top: '30%' }, // Left, upper-middle
-    { left: '15%', top: '50%' }, // Left, middle
-    { left: '20%', top: '70%' }, // Left, lower-middle
-    { left: '10%', top: '90%' }, // Left, bottom
-    { left: '85%', top: '15%' }, // Right, top
-    { left: '90%', top: '35%' }, // Right, upper-middle
-    { left: '95%', top: '55%' }, // Right, middle
-    { left: '80%', top: '75%' }, // Right, lower-middle
-    { left: '85%', top: '95%' }, // Right, bottom
-    { left: '50%', top: '20%' }, // Center, top
-    { left: '50%', top: '80%' }, // Center, bottom
+    { left: '5%', top: '10%' },
+    { left: '10%', top: '30%' },
+    { left: '15%', top: '50%' },
+    { left: '20%', top: '70%' },
+    { left: '10%', top: '90%' },
+    { left: '85%', top: '15%' },
+    { left: '90%', top: '35%' },
+    { left: '95%', top: '55%' },
+    { left: '80%', top: '75%' },
+    { left: '85%', top: '95%' },
+    { left: '50%', top: '20%' },
+    { left: '50%', top: '80%' },
   ];
 
   return (
     <div class="min-h-screen bg-gradient-to-br from-rose-100 to-rose-100 relative overflow-hidden">
-      {/* Parallax Background with Bubbles */}
       <div class="absolute inset-0 overflow-hidden pointer-events-none">
         {bubblePositions.map((pos, i) => (
           <div
@@ -173,7 +194,6 @@ const HelpCenter: Component = () => {
         ))}
       </div>
 
-      {/* Main Content */}
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
         <h1 class="text-3xl md:text-4xl font-bold text-rose-700 mb-6 help-title">Help Center</h1>
         <div class="bg-white/70 border border-rose-200 rounded-lg shadow-lg backdrop-blur-md p-6 help-container">
@@ -247,16 +267,44 @@ const HelpCenter: Component = () => {
               </div>
               <button
                 type="submit"
-                class="bg-rose-700 text-white px-4 py-2 rounded-md hover:bg-rose-800 transition-colors text-base font-medium"
+                class={`bg-rose-700 text-white px-4 py-2 rounded-md hover:bg-rose-800 transition-colors text-base font-medium flex items-center justify-center ${
+                  isLoading() ? "opacity-75 cursor-not-allowed" : ""
+                }`}
+                disabled={isLoading()}
               >
-                Send Message
+                {isLoading() ? (
+                  <>
+                    <svg
+                      class="animate-spin h-5 w-5 mr-2 text-white"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        class="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        stroke-width="4"
+                      ></circle>
+                      <path
+                        class="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
+                    </svg>
+                    Sending...
+                  </>
+                ) : (
+                  "Send Message"
+                )}
               </button>
             </form>
           </div>
         </div>
       </div>
 
-      {/* Custom CSS for Bubble Animation */}
       <style>
         {`
           @keyframes bubble {

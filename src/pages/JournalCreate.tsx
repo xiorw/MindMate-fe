@@ -1,43 +1,52 @@
-import { Component, createSignal, createEffect } from "solid-js";
-import { useNavigate } from "@solidjs/router";
+import { Component, createSignal, createEffect, onMount } from "solid-js";
+import { useNavigate, useLocation } from "@solidjs/router";
 
-// Temporary in-memory store for journal entries (shared with Journal page)
-const journalStore = {
-  entries: [
-    { id: 1, title: 'A Productive Monday', date: '2025-06-24', preview: 'Today I managed to finish all my tasks and felt really accomplished...', mood: 4, content: 'Today I managed to finish all my tasks and felt really accomplished. The project deadline was met, and I even had time for a short walk in the evening.' },
-    { id: 2, title: 'Weekend Reflections', date: '2025-06-23', preview: 'Spent time with family and friends. It was refreshing and helped me recharge...', mood: 5, content: 'Spent time with family and friends. It was refreshing and helped me recharge. We had a great barbecue and watched a movie together.' },
-    { id: 3, title: 'Overcoming Challenges', date: '2025-06-22', preview: 'Had some difficulties at work but managed to find solutions...', mood: 3, content: 'Had some difficulties at work but managed to find solutions. The team collaborated well, and we resolved the issue before the end of the day.' }
-  ],
-  addEntry(entry: { id: number; title: string; date: string; preview: string; mood: number; content: string }) {
-    this.entries.unshift(entry);
-  }
-};
+const API_URL = "http://127.0.0.1:8080/api/journals";
+
 
 const JournalCreate: Component = () => {
   const navigate = useNavigate();
-  const [title, setTitle] = createSignal("");
-  const [content, setContent] = createSignal("");
-  const [mood, setMood] = createSignal<number | null>(null);
-  const [date, setDate] = createSignal(new Date().toISOString().split('T')[0]);
+  const location = useLocation();
+  const editingJournal = (location.state && (location.state as { journal?: any }).journal) ? (location.state as { journal: any }).journal : null;
+
+  const [title, setTitle] = createSignal(editingJournal?.title || "");
+  const [content, setContent] = createSignal(editingJournal?.content || "");
+  const [date, setDate] = createSignal(
+    editingJournal
+      ? (editingJournal.created_at.length === 10 && editingJournal.created_at.includes('-')
+          ? (() => {
+              // MM-DD-YYYY or YYYY-MM-DD
+              const parts = editingJournal.created_at.split("-");
+              if (parts[0].length === 4) {
+                // YYYY-MM-DD
+                return editingJournal.created_at;
+              } else {
+                // MM-DD-YYYY
+                return `${parts[2]}-${parts[0]}-${parts[1]}`;
+              }
+            })()
+          : editingJournal.created_at)
+      : new Date().toISOString().split('T')[0]
+  );
   const [error, setError] = createSignal("");
   const [isVisible, setIsVisible] = createSignal(false);
+  const [loading, setLoading] = createSignal(false);
 
-  // Mood options matching Dashboard
-  const moodOptions = [
-    { emoji: '😢', label: 'Very Sad', color: 'bg-blue-500', value: 1 },
-    { emoji: '😔', label: 'Sad', color: 'bg-blue-400', value: 2 },
-    { emoji: '😐', label: 'Neutral', color: 'bg-gray-400', value: 3 },
-    { emoji: '😊', label: 'Happy', color: 'bg-green-400', value: 4 },
-    { emoji: '😄', label: 'Very Happy', color: 'bg-green-500', value: 5 }
-  ];
-
-  // Initialize visibility effect
   createEffect(() => {
     setTimeout(() => setIsVisible(true), 100);
   });
 
-  // Handle form submission
-  const handleSubmit = () => {
+  // If editing, update fields if location.state changes
+  onMount(() => {
+    if (editingJournal) {
+      setTitle(editingJournal.title);
+      setContent(editingJournal.content);
+      // Already set above
+    }
+  });
+
+  const handleSubmit = async () => {
+    setError("");
     if (!title().trim()) {
       setError("Title is required.");
       return;
@@ -46,34 +55,67 @@ const JournalCreate: Component = () => {
       setError("Content is required.");
       return;
     }
-    if (mood() === null) {
-      setError("Please select a mood.");
+
+    setLoading(true);
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setError("Belum login. Silakan login ulang.");
+      setLoading(false);
       return;
     }
 
-    // Generate new journal entry
-    const newEntry = {
-      id: journalStore.entries.length + 1,
-      title: title().trim(),
-      date: date(),
-      preview: content().trim().substring(0, 50) + (content().length > 50 ? '...' : ''),
-      mood: mood()!,
-      content: content().trim()
-    };
-
-    // Save to store
-    journalStore.addEntry(newEntry);
-    navigate('/journal');
+    try {
+      let res;
+      if (editingJournal) {
+        // Update
+        res = await fetch(`${API_URL}/${editingJournal.id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            title: title().trim(),
+            content: content().trim(),
+            created_at: date(),
+          }),
+        });
+      } else {
+        // Create
+        res = await fetch(API_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            title: title().trim(),
+            content: content().trim(),
+            date: date(),
+          }),
+        });
+      }
+      if (!res.ok) {
+        const result = await res.json();
+        setError(result.message || "Gagal menyimpan journal.");
+        setLoading(false);
+        return;
+      }
+      setLoading(false);
+      navigate('/journal');
+    } catch {
+      setError("Gagal menyimpan journal. Silakan coba lagi.");
+      setLoading(false);
+    }
   };
 
   return (
     <div class="min-h-screen bg-gradient-to-br from-rose-50 to-pink-50">
-      {/* Main Content */}
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div class={`transition-all duration-1000 ${isVisible() ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
-          <h1 class="text-3xl md:text-4xl font-bold text-rose-700 mb-6">Create New Journal Entry</h1>
-
-          {/* Error Alert */}
+          <h1 class="text-3xl md:text-4xl font-bold text-rose-700 mb-6">
+            {editingJournal ? "Edit Journal Entry" : "Create New Journal Entry"}
+          </h1>
           {error() && (
             <div class="flex items-center p-4 mb-4 text-sm text-red-800 rounded-lg bg-red-50 border border-red-200" role="alert">
               <svg class="flex-shrink-0 inline w-4 h-4 me-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">
@@ -83,11 +125,8 @@ const JournalCreate: Component = () => {
               <div>{error()}</div>
             </div>
           )}
-
-          {/* Journal Form */}
           <div class="max-w-full p-6 bg-white/70 border border-rose-200 rounded-lg shadow-lg backdrop-blur-md">
             <div class="space-y-6">
-              {/* Title Input */}
               <div>
                 <label for="title" class="block mb-2 text-sm font-medium text-gray-900">Title</label>
                 <input
@@ -99,8 +138,6 @@ const JournalCreate: Component = () => {
                   onInput={(e) => setTitle(e.currentTarget.value)}
                 />
               </div>
-
-              {/* Content Textarea */}
               <div>
                 <label for="content" class="block mb-2 text-sm font-medium text-gray-900">Content</label>
                 <textarea
@@ -112,27 +149,6 @@ const JournalCreate: Component = () => {
                   onInput={(e) => setContent(e.currentTarget.value)}
                 />
               </div>
-
-              {/* Mood Selection */}
-              <div>
-                <label class="block mb-2 text-sm font-medium text-gray-900">Mood</label>
-                <div class="flex justify-between mb-4">
-                  {moodOptions.map((moodOption) => (
-                    <button
-                      onClick={() => setMood(moodOption.value)}
-                      class={`w-12 h-12 rounded-full hover:scale-110 transition-transform duration-200 flex items-center justify-center text-2xl hover:shadow-lg focus:ring-4 focus:ring-rose-200 ${mood() === moodOption.value ? moodOption.color : ''}`}
-                      title={moodOption.label}
-                    >
-                      {moodOption.emoji}
-                    </button>
-                  ))}
-                </div>
-                {mood() !== null && (
-                  <p class="text-green-600 font-medium">Selected: {moodOptions[mood()! - 1]?.label}</p>
-                )}
-              </div>
-
-              {/* Date Input */}
               <div>
                 <label for="date" class="block mb-2 text-sm font-medium text-gray-900">Date</label>
                 <input
@@ -143,14 +159,15 @@ const JournalCreate: Component = () => {
                   onInput={(e) => setDate(e.currentTarget.value)}
                 />
               </div>
-
-              {/* Form Actions */}
               <div class="flex space-x-4">
                 <button
                   onClick={handleSubmit}
+                  disabled={loading()}
                   class="text-white bg-rose-700 hover:bg-rose-800 font-medium rounded-lg text-sm px-5 py-2.5"
                 >
-                  Save Entry
+                  {loading()
+                    ? (editingJournal ? "Updating..." : "Saving...")
+                    : (editingJournal ? "Update Entry" : "Save Entry")}
                 </button>
                 <button
                   onClick={() => navigate('/journal')}

@@ -20,13 +20,13 @@ const App: Component<AppProps> = (props) => {
     "/activity-suggestions",
     "/help",
     "/contact-psychologist",
-    "/community",
     "/privacy",
   ];
   const mainNavbarRoutes = [
     "/dashboard",
     "/mood",
     "/journal",
+    "/journal/create",
     "/calendar",
     "/statistics",
     "/profile",

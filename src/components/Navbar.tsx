@@ -1,22 +1,83 @@
-import { Component, createSignal } from "solid-js";
+import { Component, createSignal, createEffect } from "solid-js";
 import { useLocation, useNavigate } from "@solidjs/router";
-import { userStore } from "./userStore";
+
+const API_URL = "http://127.0.0.1:8080/api/user/profile";
 
 const Navbar: Component = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = createSignal(false);
+  const [user, setUser] = createSignal<{ username: string; email: string; avatar: string | null } | null>(null);
+  const [loading, setLoading] = createSignal(true);
+  const [error, setError] = createSignal<string | null>(null);
 
-  // Helper function to check if a link is active
-  const isActive = (path: string) => location.pathname === path;
+  // Generate default avatar with initials (same as Profile.tsx)
+  const generateDefaultAvatar = (name: string) => {
+    const getInitials = (fullName: string) => {
+      const words = fullName.trim().split(/\s+/);
+      if (words.length === 0 || !fullName.trim()) return "U";
+      if (words.length === 1) return words[0].charAt(0).toUpperCase();
+      return words.slice(0, 2).map(word => word.charAt(0).toUpperCase()).join("");
+    };
 
-  // Compute initials for fallback avatar
-  const getInitials = (name: string) => {
-    const words = name.trim().split(/\s+/);
-    if (words.length === 0 || !name.trim()) return "U";
+    const initial = getInitials(name);
+    return `data:image/svg+xml;base64,${btoa(`
+      <svg width="150" height="150" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#be123c;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#9f1239;stop-opacity:1" />
+          </linearGradient>
+        </defs>
+        <circle cx="75" cy="75" r="75" fill="url(#grad)"/>
+        <text x="75" y="95" font-family="Arial, sans-serif" font-size="50" font-weight="bold" fill="white" text-anchor="middle">${initial}</text>
+      </svg>
+    `)}`;
+  };
+
+  // Improved initials function (same logic as Profile.tsx)
+  const getInitials = (username: string) => {
+    const words = username.trim().split(/\s+/);
+    if (words.length === 0 || !username.trim()) return "U";
     if (words.length === 1) return words[0].charAt(0).toUpperCase();
     return words.slice(0, 2).map(word => word.charAt(0).toUpperCase()).join("");
   };
+
+  // Fetch user data
+  createEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setError("No authentication token found. Please log in.");
+      setLoading(false);
+      setTimeout(() => navigate('/login'), 2000);
+      return;
+    }
+
+    fetch(API_URL, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error("Failed to fetch user profile");
+        }
+        return res.json();
+      })
+      .then((data) => {
+        setUser(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError("Failed to fetch user data. Please log in again.");
+        setLoading(false);
+      });
+  });
+
+  // Helper function to check if a link is active
+  const isActive = (path: string) => location.pathname === path;
 
   // Handle logo click to refresh the current page
   const handleLogoClick = () => {
@@ -26,6 +87,19 @@ const Navbar: Component = () => {
   // Toggle mobile menu
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen());
+  };
+
+  // Get avatar src with fallback to default (same logic as Profile.tsx)
+  const getDisplayAvatar = () => {
+    const userData = user();
+    if (!userData) return null;
+    
+    // Check if avatar exists and is not empty
+    if (userData.avatar && userData.avatar.trim()) {
+      return userData.avatar;
+    } else {
+      return generateDefaultAvatar(userData.username);
+    }
   };
 
   return (
@@ -119,18 +193,25 @@ const Navbar: Component = () => {
               onClick={() => navigate('/profile')}
             >
               <span class="sr-only">Open user menu</span>
-              {userStore.user.avatar ? (
-                <img
-                  src={userStore.user.avatar}
-                  alt="User Avatar"
-                  class="w-10 h-10 rounded-full object-cover"
-                />
-              ) : (
-                <div class="w-10 h-10 bg-gradient-to-r from-rose-700 to-rose-800 rounded-full flex items-center justify-center">
-                  <span class="text-white font-semibold text-sm">
-                    {getInitials(userStore.user.name)}
-                  </span>
+              {loading() ? (
+                <div class="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+                  <span class="text-gray-600 font-semibold text-sm">...</span>
                 </div>
+              ) : error() ? (
+                <div class="w-10 h-10 bg-gradient-to-r from-rose-700 to-rose-800 rounded-full flex items-center justify-center">
+                  <span class="text-white font-semibold text-sm">U</span>
+                </div>
+              ) : user() && (
+                <img
+                  src={getDisplayAvatar()!}
+                  alt="User Avatar"
+                  class="w-10 h-10 rounded-full object-cover border-2 border-rose-200 shadow-sm"
+                  onError={(e) => {
+                    // Fallback if image fails to load
+                    const target = e.target as HTMLImageElement;
+                    target.src = generateDefaultAvatar(user()!.username);
+                  }}
+                />
               )}
             </button>
           </div>
@@ -231,18 +312,25 @@ const Navbar: Component = () => {
                   setIsMenuOpen(false);
                 }}
               >
-                {userStore.user.avatar ? (
-                  <img
-                    src={userStore.user.avatar}
-                    alt="User Avatar"
-                    class="w-8 h-8 rounded-full object-cover"
-                  />
-                ) : (
-                  <div class="w-8 h-8 bg-gradient-to-r from-rose-700 to-rose-800 rounded-full flex items-center justify-center">
-                    <span class="text-white font-semibold text-xs">
-                      {getInitials(userStore.user.name)}
-                    </span>
+                {loading() ? (
+                  <div class="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
+                    <span class="text-gray-600 font-semibold text-xs">...</span>
                   </div>
+                ) : error() ? (
+                  <div class="w-8 h-8 bg-gradient-to-r from-rose-700 to-rose-800 rounded-full flex items-center justify-center">
+                    <span class="text-white font-semibold text-xs">U</span>
+                  </div>
+                ) : user() && (
+                  <img
+                    src={getDisplayAvatar()!}
+                    alt="User Avatar"
+                    class="w-8 h-8 rounded-full object-cover border-2 border-rose-200 shadow-sm"
+                    onError={(e) => {
+                      // Fallback if image fails to load
+                      const target = e.target as HTMLImageElement;
+                      target.src = generateDefaultAvatar(user()!.username);
+                    }}
+                  />
                 )}
                 <span class="font-semibold">Profile</span>
               </button>

@@ -1,6 +1,5 @@
 import { Component, createSignal } from "solid-js";
 import { useLocation, useNavigate } from "@solidjs/router";
-import { userStore } from "./userStore";
 
 const NavbarLanding: Component = () => {
   const location = useLocation();
@@ -9,14 +8,6 @@ const NavbarLanding: Component = () => {
 
   // Helper function to check if a link is active
   const isActive = (path: string) => location.pathname === path;
-
-  // Compute initials for fallback avatar
-  const getInitials = (name: string) => {
-    const words = name.trim().split(/\s+/);
-    if (words.length === 0 || !name.trim()) return "U";
-    if (words.length === 1) return words[0].charAt(0).toUpperCase();
-    return words.slice(0, 2).map(word => word.charAt(0).toUpperCase()).join("");
-  };
 
   // Handle logo click to navigate to landing page or refresh if already on it
   const handleLogoClick = () => {
@@ -106,34 +97,8 @@ const NavbarLanding: Component = () => {
           </ul>
         </div>
 
-        {/* Right side - User Profile and Hamburger Menu */}
+        {/* Right side - Hamburger Menu */}
         <div class="flex items-center space-x-4 z-10">
-          {/* User Profile - Hidden on Mobile */}
-          <div class="hidden md:flex items-center">
-            <button
-              type="button"
-              class="flex text-sm rounded-full focus:ring-4 focus:ring-gray-800/30"
-              id="user-menu-button"
-              aria-expanded="false"
-              onClick={() => navigate('/profile')}
-            >
-              <span class="sr-only">Open user menu</span>
-              {userStore.user.avatar ? (
-                <img
-                  src={userStore.user.avatar}
-                  alt="User Avatar"
-                  class="w-10 h-10 rounded-full object-cover"
-                />
-              ) : (
-                <div class="w-10 h-10 bg-gradient-to-r from-rose-700 to-rose-800 rounded-full flex items-center justify-center">
-                  <span class="text-white font-semibold text-sm">
-                    {getInitials(userStore.user.name)}
-                  </span>
-                </div>
-              )}
-            </button>
-          </div>
-
           {/* Hamburger Menu Button - Visible on Mobile */}
           <button
             type="button"
