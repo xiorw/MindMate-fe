@@ -1,8 +1,8 @@
 import { Component, createSignal, createEffect, onMount } from "solid-js";
 import { useNavigate, useLocation } from "@solidjs/router";
 
-const API_URL = "http://127.0.0.1:8080/api/auth/login";
-const GOOGLE_AUTH_URL = "http://127.0.0.1:8080/api/auth/google";
+const API_URL = "http://0.0.0.0:8080/api/auth/login";
+const GOOGLE_AUTH_URL = "http://0.0.0.0:8080/api/auth/google";
 
 const Login: Component = () => {
   const navigate = useNavigate();
