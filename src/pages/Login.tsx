@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from "@solidjs/router";
 
 const API_URL = "http://127.0.0.1:8080/api/auth/login";
 const GOOGLE_AUTH_URL = "http://127.0.0.1:8080/api/auth/google";
-const GOOGLE_CALLBACK_URL = "http://127.0.0.1:8080/api/auth/google/callback";
 
 const Login: Component = () => {
   const navigate = useNavigate();
@@ -20,7 +19,6 @@ const Login: Component = () => {
   const [navigateTo, setNavigateTo] = createSignal<string | null>(null);
 
   const successMessage = new URLSearchParams(location.search).get("success") === "1";
-  const googleAuthSuccess = new URLSearchParams(location.search).get("google-auth") === "success";
 
   createEffect(() => {
     setTimeout(() => setIsVisible(true), 50);
@@ -30,23 +28,6 @@ const Login: Component = () => {
     if (navigateTo()) {
       setIsExiting(true);
       setTimeout(() => navigate(navigateTo()!), 500);
-    }
-  });
-
-  createEffect(() => {
-    if (googleAuthSuccess) {
-      setNavigateTo("/dashboard");
-    }
-  });
-
-  // Handle Google OAuth callback
-  onMount(() => {
-    const urlParams = new URLSearchParams(location.search);
-    const code = urlParams.get("code");
-    const state = urlParams.get("state");
-    
-    if (code) {
-      handleGoogleCallback(code, state);
     }
   });
 
@@ -131,53 +112,6 @@ const Login: Component = () => {
     } catch (err) {
       setErrors({ api: "Network error. Please try again." });
       setIsGoogleLoading(false);
-    }
-  };
-
-  const handleGoogleCallback = async (code: string, state: string | null) => {
-    setIsGoogleLoading(true);
-    setErrors({});
-
-    try {
-      const params = new URLSearchParams({ code });
-      if (state) params.append("state", state);
-
-      const response = await fetch(`${GOOGLE_CALLBACK_URL}?${params}`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        setErrors({ api: result.message || "Google login failed" });
-        setIsGoogleLoading(false);
-        // Clean up URL
-        window.history.replaceState({}, document.title, "/login");
-        return;
-      }
-
-      // Save token and user info
-      if (result.token) {
-        localStorage.setItem("token", result.token);
-        localStorage.setItem("user", JSON.stringify(result.user));
-      }
-
-      setIsGoogleLoading(false);
-      
-      // Show success message based on user type
-      if (result.is_new_user) {
-        // Redirect with welcome message for new users
-        setNavigateTo("/dashboard?welcome=1");
-      } else {
-        // Normal redirect for existing users
-        setNavigateTo("/dashboard");
-      }
-    } catch (err) {
-      setErrors({ api: "Network error during Google login." });
-      setIsGoogleLoading(false);
-      // Clean up URL
-      window.history.replaceState({}, document.title, "/login");
     }
   };
 

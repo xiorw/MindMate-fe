@@ -1,5 +1,5 @@
 import { Component, createSignal, createEffect, onMount, onCleanup } from "solid-js";
-import { useNavigate } from "@solidjs/router";
+import { useNavigate, useLocation } from "@solidjs/router";
 import * as am5 from "@amcharts/amcharts5";
 import * as am5xy from "@amcharts/amcharts5/xy";
 import * as am5themes_Animated from "@amcharts/amcharts5/themes/Animated";
@@ -114,6 +114,7 @@ const dailyQuotes = [
 
 const Dashboard: Component = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [currentTime, setCurrentTime] = createSignal(new Date());
   const [todayMood, setTodayMood] = createSignal<MoodEntry | null>(null);
   const [isLoadingMood, setIsLoadingMood] = createSignal(false);
@@ -129,6 +130,32 @@ const Dashboard: Component = () => {
   
   let chartDiv: HTMLDivElement | undefined;
   let intervalId: number | undefined;
+
+  // Handle token dari URL parameter (hasil redirect Google OAuth)
+  onMount(() => {
+    const urlParams = new URLSearchParams(location.search);
+    const token = urlParams.get("token");
+    const welcome = urlParams.get("welcome");
+    
+    if (token) {
+      // Simpan token ke localStorage
+      localStorage.setItem("token", token);
+      
+      // Clean up URL tanpa reload page
+      const cleanUrl = welcome === "1" 
+        ? "/dashboard?welcome=1" 
+        : "/dashboard";
+      window.history.replaceState({}, document.title, cleanUrl);
+    } else {
+      // Cek apakah ada token di localStorage
+      const storedToken = localStorage.getItem("token");
+      if (!storedToken) {
+        // Redirect ke login jika tidak ada token
+        navigate("/login");
+        return;
+      }
+    }
+  });
 
   // Helper function to get Monday of current week
   const getMondayOfCurrentWeek = (date: Date = new Date()) => {
@@ -192,6 +219,7 @@ const Dashboard: Component = () => {
     if (!token) {
       setError("Belum login. Silakan login ulang.");
       setLoading(false);
+      navigate("/login");
       return;
     }
 
@@ -204,13 +232,25 @@ const Dashboard: Component = () => {
       }
     })
     .then(async (res) => {
-      if (!res.ok) throw new Error("Failed to fetch user profile");
+      if (!res.ok) {
+        if (res.status === 401) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          navigate("/login");
+          return;
+        }
+        throw new Error("Failed to fetch user profile");
+      }
       return res.json();
     })
     .then((data) => {
-      setUser(data);
+      if (data) {
+        setUser(data);
+        localStorage.setItem("user", JSON.stringify(data));
+      }
     })
-    .catch(() => {
+    .catch((err) => {
+      console.error("Failed to fetch user profile:", err);
       setError("Gagal mengambil data user.");
     });
 
@@ -223,25 +263,36 @@ const Dashboard: Component = () => {
       }
     })
     .then(async (res) => {
-      if (!res.ok) throw new Error("Failed to fetch moods");
+      if (!res.ok) {
+        if (res.status === 401) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          navigate("/login");
+          return;
+        }
+        throw new Error("Failed to fetch moods");
+      }
       return res.json();
     })
     .then((data) => {
-      const moods = Array.isArray(data) ? data : data.moods || [];
-      setMoodHistory(moods);
-      
-      // Check for today's mood - format as mm-dd-yyyy
-      const today = new Date();
-      const todayFormatted = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}-${today.getFullYear()}`;
-      const todaysMood = moods.find((mood: MoodEntry) => mood.date === todayFormatted);
-      if (todaysMood) {
-        setTodayMood(todaysMood);
-      }
+      if (data) {
+        const moods = Array.isArray(data) ? data : data.moods || [];
+        setMoodHistory(moods);
+        
+        // Check for today's mood - format as mm-dd-yyyy
+        const today = new Date();
+        const todayFormatted = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}-${today.getFullYear()}`;
+        const todaysMood = moods.find((mood: MoodEntry) => mood.date === todayFormatted);
+        if (todaysMood) {
+          setTodayMood(todaysMood);
+        }
 
-      // Calculate weekly progress for current week (Monday-Sunday)
-      calculateWeeklyProgress(moods);
+        // Calculate weekly progress for current week (Monday-Sunday)
+        calculateWeeklyProgress(moods);
+      }
     })
-    .catch(() => {
+    .catch((err) => {
+      console.error("Failed to fetch moods:", err);
       setError("Gagal mengambil data mood.");
     });
 
@@ -254,18 +305,29 @@ const Dashboard: Component = () => {
       }
     })
     .then(async (res) => {
-      if (!res.ok) throw new Error("Failed to fetch journals");
+      if (!res.ok) {
+        if (res.status === 401) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          navigate("/login");
+          return;
+        }
+        throw new Error("Failed to fetch journals");
+      }
       return res.json();
     })
     .then((data) => {
-      const journals = Array.isArray(data) ? data : data.journals || [];
-      setRecentJournals(journals.slice(0, 3)); // Get latest 3 journals
-      
-      // Calculate journal streak
-      calculateJournalStreak(journals);
-      setLoading(false);
+      if (data) {
+        const journals = Array.isArray(data) ? data : data.journals || [];
+        setRecentJournals(journals.slice(0, 3)); // Get latest 3 journals
+        
+        // Calculate journal streak
+        calculateJournalStreak(journals);
+        setLoading(false);
+      }
     })
-    .catch(() => {
+    .catch((err) => {
+      console.error("Failed to fetch journals:", err);
       setError("Gagal mengambil data journal.");
       setLoading(false);
     });
@@ -499,6 +561,7 @@ const Dashboard: Component = () => {
     const token = localStorage.getItem("token");
     if (!token) {
       setError("Belum login. Silakan login ulang.");
+      navigate("/login");
       return;
     }
 
@@ -522,6 +585,12 @@ const Dashboard: Component = () => {
       });
 
       if (!res.ok) {
+        if (res.status === 401) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          navigate("/login");
+          return;
+        }
         const result = await res.json();
         setError(result.message || "You can only submit one mood entry per day.");
         setIsLoadingMood(false);
@@ -631,6 +700,12 @@ const Dashboard: Component = () => {
               How are you feeling today?
             </p>
           </div>
+
+          {new URLSearchParams(location.search).get("welcome") === "1" && (
+            <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+              Welcome to MindMate! Your account has been created successfully.
+            </div>
+          )}
 
           {error() && (
             <div class="flex items-center p-4 mb-4 text-sm text-red-800 rounded-lg bg-red-50 border border-red-200" role="alert">
