@@ -14,7 +14,7 @@ interface LocationState {
   date?: string;
 }
 
-const API_URL = "http://127.0.0.1:8080/api/moods";
+const API_URL = "https://mindmate-be-production.up.railway.app/api/moods";
 
 const moodOptions = [
   { emoji: '😢', label: 'Very Sad', value: 'very sad', textColor: 'text-red-600' },

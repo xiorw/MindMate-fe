@@ -1,7 +1,7 @@
 import { Component, createSignal, onMount } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 
-const API_URL = "http://127.0.0.1:8080/api/user/profile";
+const API_URL = "https://mindmate-be-production.up.railway.app/api/user/profile";
 
 const ProfileEdit: Component = () => {
   const navigate = useNavigate();

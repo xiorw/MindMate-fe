@@ -4,9 +4,9 @@ import * as am5 from "@amcharts/amcharts5";
 import * as am5xy from "@amcharts/amcharts5/xy";
 import * as am5themes_Animated from "@amcharts/amcharts5/themes/Animated";
 
-const API_URL_MOODS = "http://127.0.0.1:8080/api/moods";
-const API_URL_JOURNALS = "http://127.0.0.1:8080/api/journals";
-const API_URL_PROFILE = "http://127.0.0.1:8080/api/user/profile";
+const API_URL_MOODS = "https://mindmate-be-production.up.railway.app/api/moods";
+const API_URL_JOURNALS = "https://mindmate-be-production.up.railway.app/api/journals";
+const API_URL_PROFILE = "https://mindmate-be-production.up.railway.app/api/user/profile";
 
 type MoodEntry = {
   id: number;

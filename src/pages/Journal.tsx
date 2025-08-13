@@ -1,7 +1,7 @@
 import { Component, createSignal, createEffect } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 
-const API_URL = "http://127.0.0.1:8080/api/journals";
+const API_URL = "https://mindmate-be-production.up.railway.app/api/journals";
 
 type JournalEntry = {
   id: number;

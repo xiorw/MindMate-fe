@@ -1,7 +1,7 @@
 import { Component, createSignal, createEffect, onMount } from "solid-js";
 import { useNavigate, useLocation } from "@solidjs/router";
 
-const API_URL = "http://127.0.0.1:8080/api/journals";
+const API_URL = "https://mindmate-be-production.up.railway.app/api/journals";
 
 
 const JournalCreate: Component = () => {

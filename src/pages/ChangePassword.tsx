@@ -2,7 +2,7 @@ import { Component, createSignal, createEffect } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 
 // API URLs - consistent with ForgotPassword component pattern
-const USER_API_URL = "http://127.0.0.1:8080/api/user";
+const USER_API_URL = "https://mindmate-be-production.up.railway.app/api/user";
 
 const ChangePassword: Component = () => {
   const navigate = useNavigate();

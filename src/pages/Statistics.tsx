@@ -6,8 +6,8 @@ import * as am5pie from "@amcharts/amcharts5/percent";
 import * as am5themes_Animated from "@amcharts/amcharts5/themes/Animated";
 
 // API URLs
-const MOOD_API_URL = "http://127.0.0.1:8080/api/moods";
-const JOURNAL_API_URL = "http://127.0.0.1:8080/api/journals";
+const MOOD_API_URL = "https://mindmate-be-production.up.railway.app/api/moods";
+const JOURNAL_API_URL = "https://mindmate-be-production.up.railway.app/api/journals";
 
 // Types
 interface MoodEntry {
