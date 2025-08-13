@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from "@solidjs/router";
 
 const API_URL = "http://127.0.0.1:8080/api/auth/login";
 const GOOGLE_AUTH_URL = "http://127.0.0.1:8080/api/auth/google";
-const GOOGLE_CALLBACK_URL = "https://mind-mate-fe.vercel.app/api/auth/google/callback";
+const GOOGLE_CALLBACK_URL = "http://127.0.0.1:8080/api/auth/google/callback";
 
 const Login: Component = () => {
   const navigate = useNavigate();
