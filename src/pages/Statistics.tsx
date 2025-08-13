@@ -27,16 +27,18 @@ interface JournalEntry {
 
 const Statistics: Component = () => {
   const navigate = useNavigate();
-  const [timePeriod, setTimePeriod] = createSignal("30d"); // Default: last 30 days
+  
+  // State
+  const [timePeriod, setTimePeriod] = createSignal("30d");
   const [isVisible, setIsVisible] = createSignal(false);
   const [isDropdownOpen, setIsDropdownOpen] = createSignal(false);
-  const [hasMoodData, setHasMoodData] = createSignal(true); // Track if mood data exists
   const [allMoodEntries, setAllMoodEntries] = createSignal<MoodEntry[]>([]);
   const [allJournalEntries, setAllJournalEntries] = createSignal<JournalEntry[]>([]);
   const [moodEntries, setMoodEntries] = createSignal<MoodEntry[]>([]);
   const [journalEntries, setJournalEntries] = createSignal<JournalEntry[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
+  const [chartsInitialized, setChartsInitialized] = createSignal(false);
   
   // Chart references
   let moodTrendChartDiv: HTMLDivElement | undefined;
@@ -46,13 +48,13 @@ const Statistics: Component = () => {
   let moodTrendSeries: am5xy.LineSeries | undefined;
   let moodDistributionSeries: am5pie.PieSeries | undefined;
 
-  // Mood options matching Dashboard with distinct rose colors from rose-400 to rose-900
+  // Mood options
   const moodOptions = [
-    { emoji: '😢', label: 'Very Sad', color: '#9f1239', value: 1, stringValue: 'very sad' }, // rose-800
-    { emoji: '😔', label: 'Sad', color: '#be123c', value: 2, stringValue: 'sad' }, // rose-700
-    { emoji: '😐', label: 'Neutral', color: '#e11d48', value: 3, stringValue: 'neutral' }, // rose-600
-    { emoji: '😊', label: 'Happy', color: '#f43f5e', value: 4, stringValue: 'happy' }, // rose-500
-    { emoji: '😄', label: 'Very Happy', color: '#fb7185', value: 5, stringValue: 'very happy' } // rose-400
+    { emoji: '😢', label: 'Very Sad', color: '#9f1239', value: 1, stringValue: 'very sad' },
+    { emoji: '😔', label: 'Sad', color: '#be123c', value: 2, stringValue: 'sad' },
+    { emoji: '😐', label: 'Neutral', color: '#e11d48', value: 3, stringValue: 'neutral' },
+    { emoji: '😊', label: 'Happy', color: '#f43f5e', value: 4, stringValue: 'happy' },
+    { emoji: '😄', label: 'Very Happy', color: '#fb7185', value: 5, stringValue: 'very happy' }
   ];
 
   // Helper functions
@@ -80,13 +82,13 @@ const Statistics: Component = () => {
     return 3;
   }
 
-  // Function to filter data based on time period
+  // Data filtering
   const filterDataByTimePeriod = (data: any[]) => {
     const today = new Date();
     const currentPeriod = timePeriod();
     
     if (currentPeriod === "all") {
-      return data; // Return all data
+      return data;
     }
 
     let cutoffDate: Date;
@@ -97,7 +99,7 @@ const Statistics: Component = () => {
       cutoffDate = new Date();
       cutoffDate.setDate(today.getDate() - 30);
     } else {
-      return data; // Fallback to all data
+      return data;
     }
 
     return data.filter(entry => {
@@ -106,7 +108,32 @@ const Statistics: Component = () => {
     });
   };
 
-  // Fetch data from backend with improved error handling
+  const filterAndSetData = () => {
+    const allMoods = allMoodEntries();
+    const allJournals = allJournalEntries();
+
+    const filteredMoods = filterDataByTimePeriod(allMoods);
+    const filteredJournals = filterDataByTimePeriod(allJournals);
+
+    setMoodEntries(filteredMoods);
+    setJournalEntries(filteredJournals);
+    
+    console.log("Filtered data:", { 
+      moods: filteredMoods.length, 
+      journals: filteredJournals.length,
+      period: timePeriod()
+    });
+
+    // Update charts after data is set
+    if (chartsInitialized()) {
+      setTimeout(() => {
+        updateMoodTrendChart();
+        updateMoodDistributionChart();
+      }, 100);
+    }
+  };
+
+  // API functions
   const fetchData = async () => {
     const token = localStorage.getItem("token");
     if (!token) {
@@ -120,7 +147,6 @@ const Statistics: Component = () => {
       setLoading(true);
       setError(null);
       
-      // Fetch all data once for better performance
       const today = new Date();
       const yearAgo = new Date();
       yearAgo.setFullYear(today.getFullYear() - 1);
@@ -128,7 +154,6 @@ const Statistics: Component = () => {
       const startDate = formatDateMMDDYYYY(yearAgo);
       const endDate = formatDateMMDDYYYY(today);
 
-      // Fetch moods and journals concurrently
       const [moodsRes, journalsRes] = await Promise.all([
         fetch(`${MOOD_API_URL}/range?start_date=${startDate}&end_date=${endDate}`, {
           headers: { 
@@ -144,7 +169,6 @@ const Statistics: Component = () => {
         })
       ]);
 
-      // Check for authentication errors
       if (moodsRes.status === 401 || journalsRes.status === 401) {
         localStorage.removeItem("token");
         navigate("/login");
@@ -160,7 +184,6 @@ const Statistics: Component = () => {
         journalsRes.json()
       ]);
 
-      // Validate and set all data
       const validMoods = Array.isArray(moods) ? moods : [];
       const validJournals = Array.isArray(journals) ? journals : [];
 
@@ -172,7 +195,6 @@ const Statistics: Component = () => {
         totalJournals: validJournals.length 
       });
 
-      // Filter data immediately
       filterAndSetData();
 
     } catch (err) {
@@ -182,40 +204,19 @@ const Statistics: Component = () => {
       setAllJournalEntries([]);
       setMoodEntries([]);
       setJournalEntries([]);
-      setHasMoodData(false);
     } finally {
       setLoading(false);
     }
   };
 
-  // Filter and set data based on current time period
-  const filterAndSetData = () => {
-    const allMoods = allMoodEntries();
-    const allJournals = allJournalEntries();
-
-    const filteredMoods = filterDataByTimePeriod(allMoods);
-    const filteredJournals = filterDataByTimePeriod(allJournals);
-
-    setMoodEntries(filteredMoods);
-    setJournalEntries(filteredJournals);
-    setHasMoodData(filteredMoods.length > 0);
-    
-    console.log("Filtered data:", { 
-      moods: filteredMoods.length, 
-      journals: filteredJournals.length,
-      period: timePeriod()
-    });
-  };
-
-  // Initialize mood trend chart
+  // Chart initialization
   const initializeMoodTrendChart = () => {
     if (!moodTrendChartDiv) {
       console.log("moodTrendChartDiv not found");
-      return;
+      return false;
     }
 
     try {
-      // Dispose existing chart
       if (moodTrendRoot) {
         moodTrendRoot.dispose();
         moodTrendRoot = undefined;
@@ -240,14 +241,12 @@ const Statistics: Component = () => {
         })
       );
 
-      // Create renderers
       const xRenderer = am5xy.AxisRendererX.new(moodTrendRoot, { 
         minGridDistance: 50
       });
       
       const yRenderer = am5xy.AxisRendererY.new(moodTrendRoot, {});
       
-      // Configure grid appearance
       xRenderer.grid.template.setAll({
         strokeOpacity: 0.1
       });
@@ -256,7 +255,6 @@ const Statistics: Component = () => {
         strokeOpacity: 0.1
       });
 
-      // Create axes
       const xAxis = chart.xAxes.push(
         am5xy.DateAxis.new(moodTrendRoot, {
           baseInterval: { timeUnit: "day", count: 1 },
@@ -273,12 +271,10 @@ const Statistics: Component = () => {
         })
       );
 
-      // Add Y-axis labels for mood levels
       yAxis.set("numberFormatter", am5.NumberFormatter.new(moodTrendRoot, {
         numberFormat: "#"
       }));
 
-      // Create series
       moodTrendSeries = chart.series.push(
         am5xy.LineSeries.new(moodTrendRoot, {
           name: "Mood",
@@ -291,7 +287,6 @@ const Statistics: Component = () => {
         })
       );
 
-      // Add circle bullets to data points
       moodTrendSeries.bullets.push(() => {
         return am5.Bullet.new(moodTrendRoot!, {
           sprite: am5.Circle.new(moodTrendRoot!, {
@@ -303,31 +298,27 @@ const Statistics: Component = () => {
         });
       });
 
-      // Add tooltips
       moodTrendSeries.set("tooltip", am5.Tooltip.new(moodTrendRoot, {
         labelText: "Mood: {valueY}\nDate: {valueX.formatDate('MMM dd, yyyy')}"
       }));
 
       console.log("Mood trend chart initialized successfully");
-      
-      // Update with current data if available
-      updateMoodTrendChart();
+      return true;
       
     } catch (error) {
       console.error("Failed to initialize Mood Trend Chart:", error);
       setError("Failed to initialize mood trend chart");
+      return false;
     }
   };
 
-  // Initialize mood distribution chart
   const initializeMoodDistributionChart = () => {
     if (!moodDistributionChartDiv) {
       console.log("moodDistributionChartDiv not found");
-      return;
+      return false;
     }
 
     try {
-      // Dispose existing chart
       if (moodDistributionRoot) {
         moodDistributionRoot.dispose();
         moodDistributionRoot = undefined;
@@ -354,30 +345,46 @@ const Statistics: Component = () => {
         })
       );
 
-      // Configure labels
       moodDistributionSeries.labels.template.setAll({
         textType: "circular",
         fontSize: 12,
         radius: 10
       });
 
-      // Add tooltips
       moodDistributionSeries.set("tooltip", am5.Tooltip.new(moodDistributionRoot, {
         labelText: "{category}: {value} entries ({valuePercentTotal.formatNumber('#.0')}%)"
       }));
 
       console.log("Mood distribution chart initialized successfully");
-      
-      // Update with current data if available
-      updateMoodDistributionChart();
+      return true;
       
     } catch (error) {
       console.error("Failed to initialize Mood Distribution Chart:", error);
       setError("Failed to initialize mood distribution chart");
+      return false;
     }
   };
 
-  // Update mood trend chart with data from backend
+  const initializeCharts = () => {
+    console.log("Initializing both charts...");
+    const trendSuccess = initializeMoodTrendChart();
+    const distributionSuccess = initializeMoodDistributionChart();
+    
+    if (trendSuccess && distributionSuccess) {
+      setChartsInitialized(true);
+      console.log("Both charts initialized successfully");
+      
+      setTimeout(() => {
+        updateMoodTrendChart();
+        updateMoodDistributionChart();
+      }, 100);
+    } else {
+      console.log("Chart initialization failed, retrying...");
+      setTimeout(initializeCharts, 500);
+    }
+  };
+
+  // Chart update functions
   const updateMoodTrendChart = () => {
     if (!moodTrendSeries) {
       console.log("moodTrendSeries not initialized yet");
@@ -414,7 +421,6 @@ const Statistics: Component = () => {
     }
   };
 
-  // Update mood distribution chart with data from backend
   const updateMoodDistributionChart = () => {
     if (!moodDistributionSeries) {
       console.log("moodDistributionSeries not initialized yet");
@@ -427,7 +433,6 @@ const Statistics: Component = () => {
 
       if (moods.length === 0) {
         moodDistributionSeries.data.setAll([]);
-        setHasMoodData(false);
         return;
       }
 
@@ -442,22 +447,19 @@ const Statistics: Component = () => {
       })).filter(item => item.count > 0);
 
       console.log("Final processed mood distribution data:", moodCounts);
-      
-      setHasMoodData(moodCounts.length > 0);
       moodDistributionSeries.data.setAll(moodCounts);
     } catch (error) {
       console.error("Failed to update mood distribution chart:", error);
     }
   };
 
-  // Handle time period change
+  // Event handlers
   const handleTimePeriodChange = (newPeriod: string) => {
     console.log("Time period changed to:", newPeriod);
     setTimePeriod(newPeriod);
     setIsDropdownOpen(false);
   };
 
-  // Handle dropdown open/close
   const handleDropdownFocus = () => {
     setIsDropdownOpen(true);
   };
@@ -466,42 +468,17 @@ const Statistics: Component = () => {
     setTimeout(() => setIsDropdownOpen(false), 150);
   };
 
-  // Initialize visibility effect
-  createEffect(() => {
-    setTimeout(() => setIsVisible(true), 100);
-  });
+  // Utility functions
+  const hasMoodDataToDisplay = () => {
+    return moodEntries().length > 0;
+  };
 
-  // Fetch data when component mounts
-  createEffect(() => {
-    fetchData();
-  });
-
-  // Filter data when time period changes
-  createEffect(() => {
-    const period = timePeriod();
-    if (allMoodEntries().length > 0 || allJournalEntries().length > 0) {
-      filterAndSetData();
-    }
-  });
-
-  // Update charts when filtered data changes
-  createEffect(() => {
-    const moods = moodEntries();
-    if (moods.length >= 0) { // Update even with 0 length to clear charts
-      updateMoodTrendChart();
-      updateMoodDistributionChart();
-    }
-  });
-
-  // Calculate statistics
   const getStats = () => {
     const moods = moodEntries();
     const journals = journalEntries();
 
-    // Total journal entries
     const totalJournals = journals.length;
 
-    // Journal streak (consecutive days with journal entries)
     let streak = 0;
     const journalDates = [...new Set(journals.map(j => {
       const date = new Date(j.created_at);
@@ -516,7 +493,6 @@ const Statistics: Component = () => {
       current.setDate(current.getDate() - 1);
     }
 
-    // Average mood
     const validMoods = moods.filter(entry => {
       const value = getMoodValue(entry.mood);
       return value > 0 && value <= 5;
@@ -529,7 +505,6 @@ const Statistics: Component = () => {
     return { totalJournals, streak, avgMood };
   };
 
-  // Get period label
   const getPeriodLabel = () => {
     switch (timePeriod()) {
       case "7d": return "Last 7 days";
@@ -539,19 +514,32 @@ const Statistics: Component = () => {
     }
   };
 
-  // Initialize charts on mount
+  // Effects
+  createEffect(() => {
+    setTimeout(() => setIsVisible(true), 100);
+  });
+
+  createEffect(() => {
+    fetchData();
+  });
+
+  createEffect(() => {
+    const period = timePeriod();
+    if (allMoodEntries().length > 0 || allJournalEntries().length > 0) {
+      filterAndSetData();
+    }
+  });
+
+  // Lifecycle
   onMount(() => {
     console.log("Statistics component mounted");
     
-    // Initialize charts with delay to ensure DOM is ready
     setTimeout(() => {
-      console.log("Initializing charts after timeout");
-      initializeMoodTrendChart();
-      initializeMoodDistributionChart();
-    }, 200);
+      console.log("Starting chart initialization process");
+      initializeCharts();
+    }, 300);
   });
 
-  // Cleanup charts on unmount
   onCleanup(() => {
     console.log("Cleaning up charts");
     if (moodTrendRoot) {
@@ -623,7 +611,7 @@ const Statistics: Component = () => {
             </div>
           )}
 
-          {/* Time Period Filter with Animated Arrow */}
+          {/* Time Period Filter */}
           <div class="mb-6">
             <div class="dropdown-container w-full sm:w-48">
               <select
@@ -688,9 +676,7 @@ const Statistics: Component = () => {
                   Mood Trend Over Time
                   <span class="text-sm text-gray-500 ml-2 font-normal">({getPeriodLabel()})</span>
                 </h5>
-                {moodEntries().length > 0 ? (
-                  <div ref={moodTrendChartDiv} class="w-full h-80 bg-gradient-to-br from-rose-50 to-pink-50 rounded-lg"></div>
-                ) : (
+                {!loading() && !hasMoodDataToDisplay() ? (
                   <div class="w-full h-80 flex flex-col items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50 rounded-lg">
                     <svg class="w-16 h-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -698,6 +684,8 @@ const Statistics: Component = () => {
                     <p class="text-gray-500 text-lg">No mood data available for this period.</p>
                     <p class="text-gray-400 text-sm mt-2">Start tracking your mood to see trends!</p>
                   </div>
+                ) : (
+                  <div ref={moodTrendChartDiv} class="w-full h-80 bg-gradient-to-br from-rose-50 to-pink-50 rounded-lg"></div>
                 )}
               </div>
 
@@ -707,9 +695,7 @@ const Statistics: Component = () => {
                   Mood Distribution
                   <span class="text-sm text-gray-500 ml-2 font-normal">({getPeriodLabel()})</span>
                 </h5>
-                {hasMoodData() && moodEntries().length > 0 ? (
-                  <div ref={moodDistributionChartDiv} class="w-full h-80 bg-gradient-to-br from-rose-50 to-pink-50 rounded-lg"></div>
-                ) : (
+                {!loading() && !hasMoodDataToDisplay() ? (
                   <div class="w-full h-80 flex flex-col items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50 rounded-lg">
                     <svg class="w-16 h-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
@@ -718,6 +704,8 @@ const Statistics: Component = () => {
                     <p class="text-gray-500 text-lg">No mood data available for this period.</p>
                     <p class="text-gray-400 text-sm mt-2">Start tracking your mood to see distribution!</p>
                   </div>
+                ) : (
+                  <div ref={moodDistributionChartDiv} class="w-full h-80 bg-gradient-to-br from-rose-50 to-pink-50 rounded-lg"></div>
                 )}
               </div>
             </>
