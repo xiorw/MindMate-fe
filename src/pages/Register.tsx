@@ -1,7 +1,7 @@
 import { Component, createSignal, createEffect } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 
-const API_URL = "http://0.0.0.0:8080/api/auth/register";
+const API_URL = "https://mindmate-be-production.up.railway.app/api/auth/register";
 
 const Register: Component = () => {
   const navigate = useNavigate();

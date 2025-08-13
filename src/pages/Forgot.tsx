@@ -2,7 +2,7 @@ import { Component, createSignal, createEffect } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 
 // API URLs - consistent with Calendar component pattern
-const USER_API_URL = "http://0.0.0.0:8080/api/user";
+const USER_API_URL = "https://mindmate-be-production.up.railway.app/api/user";
 
 const ForgotPassword: Component = () => {
   const navigate = useNavigate();
