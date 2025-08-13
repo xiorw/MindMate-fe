@@ -127,6 +127,7 @@ const Dashboard: Component = () => {
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
   const [user, setUser] = createSignal<UserProfile | null>(null);
+  const [tokenProcessed, setTokenProcessed] = createSignal(false);
   
   let chartDiv: HTMLDivElement | undefined;
   let intervalId: number | undefined;
@@ -138,6 +139,7 @@ const Dashboard: Component = () => {
     const welcome = urlParams.get("welcome");
     
     if (token) {
+      console.log("Token received from OAuth callback:", token.substring(0, 20) + "...");
       // Simpan token ke localStorage
       localStorage.setItem("token", token);
       
@@ -146,13 +148,21 @@ const Dashboard: Component = () => {
         ? "/dashboard?welcome=1" 
         : "/dashboard";
       window.history.replaceState({}, document.title, cleanUrl);
+      
+      // Mark token as processed
+      setTokenProcessed(true);
+      console.log("Token saved to localStorage and URL cleaned up");
     } else {
       // Cek apakah ada token di localStorage
       const storedToken = localStorage.getItem("token");
       if (!storedToken) {
+        console.log("No token found, redirecting to login");
         // Redirect ke login jika tidak ada token
         navigate("/login");
         return;
+      } else {
+        console.log("Token found in localStorage");
+        setTokenProcessed(true);
       }
     }
   });
@@ -213,15 +223,24 @@ const Dashboard: Component = () => {
     }, 1000);
   });
 
-  // Fetch data from backend
+  // Fetch data from backend - ONLY run after token is processed
   createEffect(() => {
+    // Wait for token to be processed first
+    if (!tokenProcessed()) {
+      console.log("Token not processed yet, waiting...");
+      return;
+    }
+
     const token = localStorage.getItem("token");
     if (!token) {
+      console.log("No token found after processing, redirecting to login");
       setError("Belum login. Silakan login ulang.");
       setLoading(false);
       navigate("/login");
       return;
     }
+
+    console.log("Starting data fetch with token:", token.substring(0, 20) + "...");
 
     // Fetch user profile data
     fetch(API_URL_PROFILE, {
@@ -233,7 +252,9 @@ const Dashboard: Component = () => {
     })
     .then(async (res) => {
       if (!res.ok) {
+        console.log("Profile fetch failed with status:", res.status);
         if (res.status === 401) {
+          console.log("Token expired or invalid, clearing storage and redirecting");
           localStorage.removeItem("token");
           localStorage.removeItem("user");
           navigate("/login");
@@ -245,6 +266,7 @@ const Dashboard: Component = () => {
     })
     .then((data) => {
       if (data) {
+        console.log("User profile loaded:", data.username);
         setUser(data);
         localStorage.setItem("user", JSON.stringify(data));
       }
@@ -264,7 +286,9 @@ const Dashboard: Component = () => {
     })
     .then(async (res) => {
       if (!res.ok) {
+        console.log("Mood fetch failed with status:", res.status);
         if (res.status === 401) {
+          console.log("Token expired or invalid, clearing storage and redirecting");
           localStorage.removeItem("token");
           localStorage.removeItem("user");
           navigate("/login");
@@ -277,6 +301,7 @@ const Dashboard: Component = () => {
     .then((data) => {
       if (data) {
         const moods = Array.isArray(data) ? data : data.moods || [];
+        console.log("Loaded", moods.length, "mood entries");
         setMoodHistory(moods);
         
         // Check for today's mood - format as mm-dd-yyyy
@@ -306,7 +331,9 @@ const Dashboard: Component = () => {
     })
     .then(async (res) => {
       if (!res.ok) {
+        console.log("Journal fetch failed with status:", res.status);
         if (res.status === 401) {
+          console.log("Token expired or invalid, clearing storage and redirecting");
           localStorage.removeItem("token");
           localStorage.removeItem("user");
           navigate("/login");
@@ -319,11 +346,13 @@ const Dashboard: Component = () => {
     .then((data) => {
       if (data) {
         const journals = Array.isArray(data) ? data : data.journals || [];
+        console.log("Loaded", journals.length, "journal entries");
         setRecentJournals(journals.slice(0, 3)); // Get latest 3 journals
         
         // Calculate journal streak
         calculateJournalStreak(journals);
         setLoading(false);
+        console.log("All data loaded successfully");
       }
     })
     .catch((err) => {
