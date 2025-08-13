@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8080', // Your Axum backend address
+        target: 'https://mindmate-be-production.up.railway.app', // Your Axum backend address
         changeOrigin: true,
         },
       },
