@@ -14,8 +14,8 @@ interface NavigationState {
   date: string;
 }
 
-const MOOD_API_URL = "http://127.0.0.1:8080/api/moods";
-const JOURNAL_API_URL = "http://127.0.0.1:8080/api/journals";
+const MOOD_API_URL = "https://mindmate-be-production.up.railway.app/api/moods";
+const JOURNAL_API_URL = "https://mindmate-be-production.up.railway.app/api/journals";
 
 const moodOptions = [
   { emoji: '😢', label: 'Very Sad', value: 1, stringValue: 'very sad', textColor: 'text-red-600' },
