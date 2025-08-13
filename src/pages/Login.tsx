@@ -44,20 +44,8 @@ const Login: Component = () => {
     const urlParams = new URLSearchParams(location.search);
     const code = urlParams.get("code");
     const state = urlParams.get("state");
-    const error = urlParams.get("error");
-    
-    console.log("🔍 URL Params:", { code: code?.substring(0, 10) + "...", state, error });
-    
-    if (error) {
-      console.error("❌ Google OAuth Error:", error);
-      setErrors({ api: "Google authentication was cancelled or failed" });
-      // Clean up URL
-      window.history.replaceState({}, document.title, "/login");
-      return;
-    }
     
     if (code) {
-      console.log("✅ Authorization code received, processing Google callback...");
       handleGoogleCallback(code, state);
     }
   });
@@ -88,8 +76,6 @@ const Login: Component = () => {
     setErrors({});
 
     try {
-      console.log("🔐 Attempting login for:", email());
-      
       const res = await fetch(API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -100,10 +86,8 @@ const Login: Component = () => {
       });
 
       const result = await res.json();
-      console.log("📡 Login response:", { status: res.status, ok: res.ok });
 
       if (!res.ok) {
-        console.error("❌ Login failed:", result);
         setErrors({ api: result.message || "Login failed" });
         setIsLoading(false);
         return;
@@ -113,13 +97,11 @@ const Login: Component = () => {
       if (result.token) {
         localStorage.setItem("token", result.token);
         localStorage.setItem("user", JSON.stringify(result.user));
-        console.log("✅ Login successful, token saved");
       }
 
       setIsLoading(false);
       setNavigateTo("/dashboard");
     } catch (err) {
-      console.error("❌ Network error during login:", err);
       setErrors({ api: "Network error. Please try again." });
       setIsLoading(false);
     }
@@ -130,8 +112,6 @@ const Login: Component = () => {
     setErrors({});
 
     try {
-      console.log("🔄 Getting Google OAuth URL...");
-      
       // Get Google OAuth URL from backend
       const response = await fetch(GOOGLE_AUTH_URL, {
         method: "GET",
@@ -139,69 +119,37 @@ const Login: Component = () => {
       });
 
       const result = await response.json();
-      console.log("📡 Google auth URL response:", { status: response.status, ok: response.ok });
 
       if (!response.ok) {
-        console.error("❌ Failed to get Google auth URL:", result);
         setErrors({ api: result.message || "Failed to get Google auth URL" });
         setIsGoogleLoading(false);
         return;
       }
 
-      console.log("✅ Redirecting to Google OAuth...");
-      
       // Redirect to Google OAuth
       window.location.href = result.auth_url;
     } catch (err) {
-      console.error("❌ Network error during Google auth URL request:", err);
       setErrors({ api: "Network error. Please try again." });
       setIsGoogleLoading(false);
     }
   };
 
   const handleGoogleCallback = async (code: string, state: string | null) => {
-    console.log("🔄 Processing Google callback...");
     setIsGoogleLoading(true);
     setErrors({});
 
     try {
       const params = new URLSearchParams({ code });
-      if (state) {
-        params.append("state", state);
-      }
+      if (state) params.append("state", state);
 
-      const callbackUrl = `${GOOGLE_CALLBACK_URL}?${params}`;
-      console.log("📡 Calling Google callback URL:", callbackUrl.replace(code, code.substring(0, 10) + "..."));
-
-      const response = await fetch(callbackUrl, {
+      const response = await fetch(`${GOOGLE_CALLBACK_URL}?${params}`, {
         method: "GET",
-        headers: { 
-          "Content-Type": "application/json",
-          "Accept": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
       });
 
-      const responseText = await response.text();
-      console.log("📡 Google callback response:", { 
-        status: response.status, 
-        ok: response.ok,
-        contentType: response.headers.get('content-type')
-      });
-
-      let result;
-      try {
-        result = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error("❌ Failed to parse response as JSON:", parseError);
-        console.log("📄 Raw response:", responseText);
-        setErrors({ api: "Invalid response from server" });
-        setIsGoogleLoading(false);
-        window.history.replaceState({}, document.title, "/login");
-        return;
-      }
+      const result = await response.json();
 
       if (!response.ok) {
-        console.error("❌ Google login failed:", result);
         setErrors({ api: result.message || "Google login failed" });
         setIsGoogleLoading(false);
         // Clean up URL
@@ -209,40 +157,23 @@ const Login: Component = () => {
         return;
       }
 
-      console.log("✅ Google login successful:", {
-        user_email: result.user?.email,
-        is_new_user: result.is_new_user,
-        has_token: !!result.token
-      });
-
       // Save token and user info
       if (result.token) {
         localStorage.setItem("token", result.token);
         localStorage.setItem("user", JSON.stringify(result.user));
-        console.log("💾 Token and user data saved to localStorage");
-      } else {
-        console.error("❌ No token received in response");
-        setErrors({ api: "Authentication failed: No token received" });
-        setIsGoogleLoading(false);
-        window.history.replaceState({}, document.title, "/login");
-        return;
       }
 
       setIsGoogleLoading(false);
       
-      // Clean up URL first
-      window.history.replaceState({}, document.title, "/login");
-      
       // Show success message based on user type
       if (result.is_new_user) {
-        console.log("🎉 New user created, redirecting to dashboard with welcome message");
+        // Redirect with welcome message for new users
         setNavigateTo("/dashboard?welcome=1");
       } else {
-        console.log("🎉 Existing user logged in, redirecting to dashboard");
+        // Normal redirect for existing users
         setNavigateTo("/dashboard");
       }
     } catch (err) {
-      console.error("❌ Network error during Google callback:", err);
       setErrors({ api: "Network error during Google login." });
       setIsGoogleLoading(false);
       // Clean up URL
