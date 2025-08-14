@@ -239,25 +239,46 @@ const Statistics: Component = () => {
   };
 
   const loadAmCharts = async () => {
-    if (window.am5) return Promise.resolve();
+    if (window.am5 && window.am5xy) return Promise.resolve();
     
     const loadScript = (src: string) => {
       return new Promise((resolve, reject) => {
+        // Check if script already exists
+        const existingScript = document.querySelector(`script[src="${src}"]`);
+        if (existingScript) {
+          resolve(null);
+          return;
+        }
+
         const script = document.createElement('script');
         script.src = src;
         script.onload = resolve;
-        script.onerror = reject;
+        script.onerror = (error) => {
+          console.error(`Failed to load script: ${src}`, error);
+          reject(error);
+        };
         document.head.appendChild(script);
       });
     };
 
     try {
-      // Load amCharts 5 core
-      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/amcharts5/5.5.0/index.js');
+      // Load amCharts 5 core - using a different CDN
+      await loadScript('https://cdn.amcharts.com/lib/5/index.js');
       // Load XY chart
-      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/amcharts5/5.5.0/xy.js');
+      await loadScript('https://cdn.amcharts.com/lib/5/xy.js');
       // Load themes
-      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/amcharts5/5.5.0/themes/Animated.js');
+      await loadScript('https://cdn.amcharts.com/lib/5/themes/Animated.js');
+      
+      // Wait a bit for the scripts to initialize
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Verify that the libraries loaded correctly
+      if (!window.am5) {
+        throw new Error('amCharts 5 core library failed to load');
+      }
+      if (!window.am5xy) {
+        throw new Error('amCharts 5 XY library failed to load');
+      }
     } catch (error) {
       console.error('Error loading amCharts:', error);
       throw error;
