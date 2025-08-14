@@ -21,6 +21,7 @@ type JournalEntry = {
   title: string;
   content: string;
   created_at: string;
+  date?: string; // Optional field if backend supports separate journal date
 };
 
 type UserProfile = {
@@ -362,34 +363,81 @@ const Dashboard: Component = () => {
     });
   });
 
-  // Calculate journal writing streak based on consecutive days up to today
+  // FIXED: Calculate journal writing streak - only counts journals written for the same day they were created
   const calculateJournalStreak = (journals: JournalEntry[]) => {
     if (journals.length === 0) {
       setJournalStreak(0);
       return;
     }
 
-    // Filter journals to only include entries created on the same day (not backdated/future dated)
-    const validJournals = journals.filter(journal => {
-      const journalCreatedAt = new Date(journal.created_at);
-      const journalCreatedDate = journalCreatedAt.toISOString().split('T')[0];
+    console.log("Calculating journal streak for", journals.length, "journals");
+
+    // Helper function to normalize date string to YYYY-MM-DD format
+    const normalizeDateString = (dateStr: string): string => {
+      if (!dateStr) return '';
       
-      // Only count journals that were created on or before today
-      const today = new Date().toISOString().split('T')[0];
-      return journalCreatedDate <= today;
+      // If it's ISO format (contains T), extract date part
+      if (dateStr.includes('T')) {
+        return dateStr.split('T')[0];
+      }
+      
+      // If it's MM-DD-YYYY format, convert to YYYY-MM-DD
+      if (dateStr.match(/^\d{2}-\d{2}-\d{4}$/)) {
+        const [mm, dd, yyyy] = dateStr.split('-');
+        return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+      }
+      
+      // If already YYYY-MM-DD format
+      if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        return dateStr;
+      }
+      
+      // Try to parse as date and format
+      try {
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return '';
+        return date.toISOString().split('T')[0];
+      } catch {
+        return '';
+      }
+    };
+
+    // Filter journals that were created on the same date as their intended journal date
+    const validStreakJournals = journals.filter(journal => {
+      const createdAt = new Date(journal.created_at);
+      if (isNaN(createdAt.getTime())) return false;
+      
+      const createdDateStr = createdAt.toISOString().split('T')[0];
+      
+      // If journal has a separate date field, compare it with created_at date
+      if (journal.date) {
+        const journalDateStr = normalizeDateString(journal.date);
+        const isValidStreak = createdDateStr === journalDateStr;
+        console.log(`Journal ${journal.id}: created=${createdDateStr}, journal_date=${journalDateStr}, valid_streak=${isValidStreak}`);
+        return isValidStreak;
+      }
+      
+      // If no separate date field, assume journal was created for that day
+      console.log(`Journal ${journal.id}: created=${createdDateStr}, no separate date field, counting for streak`);
+      return true;
     });
 
-    // Group valid journals by the date they were created (not backdated)
-    const journalsByDate = new Set<string>();
+    console.log("Valid streak journals:", validStreakJournals.length, "out of", journals.length);
+
+    // Group valid journals by their creation date
+    const journalsByCreatedDate = new Set<string>();
     
-    validJournals.forEach(journal => {
+    validStreakJournals.forEach(journal => {
       const createdDate = new Date(journal.created_at);
-      // Format as YYYY-MM-DD for consistent comparison
       const dateKey = createdDate.toISOString().split('T')[0];
-      journalsByDate.add(dateKey);
+      journalsByCreatedDate.add(dateKey);
+      console.log(`Added date ${dateKey} to streak calculation`);
     });
 
-    if (journalsByDate.size === 0) {
+    console.log("Unique dates with valid journal entries:", Array.from(journalsByCreatedDate));
+
+    if (journalsByCreatedDate.size === 0) {
+      console.log("No valid journal entries found, streak = 0");
       setJournalStreak(0);
       return;
     }
@@ -398,26 +446,28 @@ const Dashboard: Component = () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    // Start checking from today
+    // Start from today and count backwards for consecutive days
     let currentDate = new Date(today);
     
-    // Count consecutive days with journal entries starting from today going backwards
+    console.log("Starting streak calculation from today:", currentDate.toISOString().split('T')[0]);
+    
     while (true) {
       const checkDateString = currentDate.toISOString().split('T')[0];
       
-      // If current date has a journal entry, increment streak
-      if (journalsByDate.has(checkDateString)) {
+      // Check if there was a valid journal entry created on this date
+      if (journalsByCreatedDate.has(checkDateString)) {
         streak++;
+        console.log(`Day ${checkDateString}: Found journal entry, streak = ${streak}`);
         // Move to previous day
         currentDate.setDate(currentDate.getDate() - 1);
       } else {
-        // No journal entry for this date
-        // If this is the first day we're checking (today) and no entry, streak is 0
-        // If we already have some streak, this breaks the consecutive days
+        // No journal entry for this date, streak is broken
+        console.log(`Day ${checkDateString}: No journal entry, streak ends at ${streak}`);
         break;
       }
     }
 
+    console.log("Final streak:", streak);
     setJournalStreak(streak);
   };
 

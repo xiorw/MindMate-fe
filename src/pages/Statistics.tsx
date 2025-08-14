@@ -1,4 +1,4 @@
-import { Component, createSignal, createEffect, onMount } from "solid-js";
+import { Component, createSignal, createEffect, onMount, onCleanup } from "solid-js";
 
 const MOOD_API_URL = "https://mindmate-be-production.up.railway.app/api/moods";
 const JOURNAL_API_URL = "https://mindmate-be-production.up.railway.app/api/journals";
@@ -75,6 +75,14 @@ function formatDateMMDDYYYY(date: Date) {
   return `${mm}-${dd}-${yyyy}`;
 }
 
+// amCharts 5 type declarations
+declare global {
+  interface Window {
+    am5: any;
+    am5xy: any;
+  }
+}
+
 const Statistics: Component = () => {
   const [isVisible, setIsVisible] = createSignal(false);
   const [moodData, setMoodData] = createSignal<any[]>([]);
@@ -84,21 +92,21 @@ const Statistics: Component = () => {
   const [selectedPeriod, setSelectedPeriod] = createSignal('last_30_days');
   const [isDropdownOpen, setIsDropdownOpen] = createSignal(false);
   
-  let moodChartRef: HTMLCanvasElement | undefined;
-  let journalChartRef: HTMLCanvasElement | undefined;
-  let moodChart: any;
-  let journalChart: any;
+  let moodChartDiv: HTMLDivElement | undefined;
+  let journalChartDiv: HTMLDivElement | undefined;
+  let moodChartRoot: any;
+  let journalChartRoot: any;
 
   const periodOptions = [
-  { value: 'recent', label: 'Recent (Last 7 days)', days: 7 },
-  { value: 'last_3_days', label: 'Last 3 days', days: 3 },
-  { value: 'last_7_days', label: 'Last 7 days', days: 7 },
-  { value: 'last_month', label: 'Last Month', days: 30 },
-  { value: 'last_30_days', label: 'Last 30 days', days: 30 },
-  { value: 'all_time', label: 'All Time', days: 365 }
-];
+    { value: 'recent', label: 'Recent (Last 7 days)', days: 7 },
+    { value: 'last_3_days', label: 'Last 3 days', days: 3 },
+    { value: 'last_7_days', label: 'Last 7 days', days: 7 },
+    { value: 'last_month', label: 'Last Month', days: 30 },
+    { value: 'last_30_days', label: 'Last 30 days', days: 30 },
+    { value: 'all_time', label: 'All Time', days: 365 }
+  ];
 
-// Get date range based on selected period
+  // Get date range based on selected period
   const getDateRange = () => {
     const endDate = new Date();
     const startDate = new Date(endDate);
@@ -208,6 +216,7 @@ const Statistics: Component = () => {
         chartData.push({
           date: formatDateForDisplay(dateStr),
           fullDate: dateStr,
+          dateObj: date.getTime(), // For amCharts date axis
           mood: avgMood,
           journals: journalCount
         });
@@ -229,134 +238,232 @@ const Statistics: Component = () => {
     }
   };
 
+  const loadAmCharts = async () => {
+    if (window.am5) return Promise.resolve();
+    
+    const loadScript = (src: string) => {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    };
+
+    try {
+      // Load amCharts 5 core
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/amcharts5/5.5.0/index.js');
+      // Load XY chart
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/amcharts5/5.5.0/xy.js');
+      // Load themes
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/amcharts5/5.5.0/themes/Animated.js');
+    } catch (error) {
+      console.error('Error loading amCharts:', error);
+      throw error;
+    }
+  };
+
   const updateCharts = async () => {
     if (typeof window === 'undefined') return;
     
     try {
-      // Import Chart.js from CDN
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js';
+      await loadAmCharts();
+      const am5 = window.am5;
+      const am5xy = window.am5xy;
       
-      if (!window.Chart) {
-        await new Promise((resolve, reject) => {
-          script.onload = resolve;
-          script.onerror = reject;
-          document.head.appendChild(script);
-        });
+      // Dispose existing charts
+      if (moodChartRoot) {
+        moodChartRoot.dispose();
       }
-
-      const Chart = window.Chart;
-      
-      // Destroy existing charts
-      if (moodChart) {
-        moodChart.destroy();
-      }
-      if (journalChart) {
-        journalChart.destroy();
+      if (journalChartRoot) {
+        journalChartRoot.dispose();
       }
 
       // Create mood chart
-      if (moodChartRef && moodData().length > 0) {
-        moodChart = new Chart(moodChartRef, {
-          type: 'line',
-          data: {
-            labels: moodData().map(d => d.date),
-            datasets: [{
-              label: 'Mood Level',
-              data: moodData().map(d => d.mood),
-              borderColor: '#be185d',
-              backgroundColor: 'rgba(190, 24, 93, 0.1)',
-              borderWidth: 2,
-              fill: true,
-              tension: 0.3,
-              pointRadius: 4,
-              pointHoverRadius: 6
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-              y: {
-                beginAtZero: false,
-                min: 1,
-                max: 5,
-                ticks: {
-                  stepSize: 1,
-                  callback: function(value: any) {
-                    const option = moodOptions.find(opt => opt.value === value);
-                    return option ? option.label : value;
-                  }
-                }
-              }
+      if (moodChartDiv && moodData().length > 0) {
+        moodChartRoot = am5.Root.new(moodChartDiv);
+        
+        // Set themes
+        moodChartRoot.setThemes([
+          am5.themes_Animated.new(moodChartRoot)
+        ]);
+
+        // Create chart
+        const moodChart = moodChartRoot.container.children.push(
+          am5xy.XYChart.new(moodChartRoot, {
+            panX: true,
+            panY: true,
+            wheelX: "panX",
+            wheelY: "zoomX",
+            paddingLeft: 0
+          })
+        );
+
+        // Create axes
+        const xAxis = moodChart.xAxes.push(
+          am5xy.DateAxis.new(moodChartRoot, {
+            maxZoomCount: 50,
+            baseInterval: {
+              timeUnit: "day",
+              count: 1
             },
-            plugins: {
-              tooltip: {
-                callbacks: {
-                  title: function(context: any) {
-                    const index = context[0].dataIndex;
-                    return `Date: ${moodData()[index].fullDate}`;
-                  },
-                  label: function(context: any) {
-                    const value = context.parsed.y;
-                    const option = moodOptions.find(opt => opt.value === Math.round(value));
-                    return `Mood: ${option ? option.label : 'Unknown'} (${value.toFixed(1)})`;
-                  }
-                }
-              }
-            }
-          }
+            renderer: am5xy.AxisRendererX.new(moodChartRoot, {
+              minGridDistance: 50
+            }),
+            tooltip: am5.Tooltip.new(moodChartRoot, {})
+          })
+        );
+
+        const yAxis = moodChart.yAxes.push(
+          am5xy.ValueAxis.new(moodChartRoot, {
+            min: 1,
+            max: 5,
+            renderer: am5xy.AxisRendererY.new(moodChartRoot, {})
+          })
+        );
+
+        // Create series
+        const moodSeries = moodChart.series.push(
+          am5xy.LineSeries.new(moodChartRoot, {
+            name: "Mood Level",
+            xAxis: xAxis,
+            yAxis: yAxis,
+            valueYField: "mood",
+            valueXField: "dateObj",
+            tooltip: am5.Tooltip.new(moodChartRoot, {
+              labelText: "Date: {fullDate}\nMood: {mood} ({moodLabel})"
+            }),
+            stroke: am5.color("#be185d"),
+            fill: am5.color("#be185d")
+          })
+        );
+
+        // Add fill gradient
+        moodSeries.fills.template.setAll({
+          fillOpacity: 0.2,
+          visible: true
         });
+
+        // Add circle bullet
+        moodSeries.bullets.push(() => {
+          return am5.Bullet.new(moodChartRoot, {
+            sprite: am5.Circle.new(moodChartRoot, {
+              radius: 4,
+              fill: am5.color("#be185d"),
+              stroke: am5.color("#ffffff"),
+              strokeWidth: 2
+            })
+          });
+        });
+
+        // Prepare data with mood labels
+        const moodChartData = moodData().map(d => ({
+          ...d,
+          moodLabel: getMoodLabel(d.mood)
+        }));
+
+        moodSeries.data.setAll(moodChartData);
+
+        // Add cursor
+        moodChart.set("cursor", am5xy.XYCursor.new(moodChartRoot, {
+          behavior: "none"
+        }));
+
+        // Make stuff animate on load
+        moodSeries.appear(1000);
+        moodChart.appear(1000, 100);
       }
 
       // Create journal chart
-      if (journalChartRef) {
-        journalChart = new Chart(journalChartRef, {
-          type: 'line',
-          data: {
-            labels: journalData().map(d => d.date),
-            datasets: [{
-              label: 'Journal Entries',
-              data: journalData().map(d => d.journals),
-              borderColor: '#059669',
-              backgroundColor: 'rgba(5, 150, 105, 0.1)',
-              borderWidth: 2,
-              fill: true,
-              tension: 0.3,
-              pointRadius: 4,
-              pointHoverRadius: 6
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-              y: {
-                beginAtZero: true,
-                ticks: {
-                  stepSize: 1
-                }
-              }
+      if (journalChartDiv) {
+        journalChartRoot = am5.Root.new(journalChartDiv);
+        
+        // Set themes
+        journalChartRoot.setThemes([
+          am5.themes_Animated.new(journalChartRoot)
+        ]);
+
+        // Create chart
+        const journalChart = journalChartRoot.container.children.push(
+          am5xy.XYChart.new(journalChartRoot, {
+            panX: true,
+            panY: true,
+            wheelX: "panX",
+            wheelY: "zoomX",
+            paddingLeft: 0
+          })
+        );
+
+        // Create axes
+        const xAxis = journalChart.xAxes.push(
+          am5xy.DateAxis.new(journalChartRoot, {
+            maxZoomCount: 50,
+            baseInterval: {
+              timeUnit: "day",
+              count: 1
             },
-            plugins: {
-              tooltip: {
-                callbacks: {
-                  title: function(context: any) {
-                    const index = context[0].dataIndex;
-                    return `Date: ${journalData()[index].fullDate}`;
-                  },
-                  label: function(context: any) {
-                    const value = context.parsed.y;
-                    return `Journal Entries: ${value}`;
-                  }
-                }
-              }
-            }
-          }
+            renderer: am5xy.AxisRendererX.new(journalChartRoot, {
+              minGridDistance: 50
+            }),
+            tooltip: am5.Tooltip.new(journalChartRoot, {})
+          })
+        );
+
+        const yAxis = journalChart.yAxes.push(
+          am5xy.ValueAxis.new(journalChartRoot, {
+            min: 0,
+            renderer: am5xy.AxisRendererY.new(journalChartRoot, {})
+          })
+        );
+
+        // Create series
+        const journalSeries = journalChart.series.push(
+          am5xy.LineSeries.new(journalChartRoot, {
+            name: "Journal Entries",
+            xAxis: xAxis,
+            yAxis: yAxis,
+            valueYField: "journals",
+            valueXField: "dateObj",
+            tooltip: am5.Tooltip.new(journalChartRoot, {
+              labelText: "Date: {fullDate}\nJournal Entries: {journals}"
+            }),
+            stroke: am5.color("#059669"),
+            fill: am5.color("#059669")
+          })
+        );
+
+        // Add fill gradient
+        journalSeries.fills.template.setAll({
+          fillOpacity: 0.2,
+          visible: true
         });
+
+        // Add circle bullet
+        journalSeries.bullets.push(() => {
+          return am5.Bullet.new(journalChartRoot, {
+            sprite: am5.Circle.new(journalChartRoot, {
+              radius: 4,
+              fill: am5.color("#059669"),
+              stroke: am5.color("#ffffff"),
+              strokeWidth: 2
+            })
+          });
+        });
+
+        journalSeries.data.setAll(journalData());
+
+        // Add cursor
+        journalChart.set("cursor", am5xy.XYCursor.new(journalChartRoot, {
+          behavior: "none"
+        }));
+
+        // Make stuff animate on load
+        journalSeries.appear(1000);
+        journalChart.appear(1000, 100);
       }
     } catch (error) {
-      console.error('Error loading Chart.js or creating charts:', error);
+      console.error('Error loading amCharts or creating charts:', error);
       setError("Failed to load charts");
     }
   };
@@ -374,10 +481,16 @@ const Statistics: Component = () => {
   });
 
   onMount(() => {
-    return () => {
-      if (moodChart) moodChart.destroy();
-      if (journalChart) journalChart.destroy();
-    };
+    // Cleanup function will be called on unmount
+  });
+
+  onCleanup(() => {
+    if (moodChartRoot) {
+      moodChartRoot.dispose();
+    }
+    if (journalChartRoot) {
+      journalChartRoot.dispose();
+    }
   });
 
   const getMoodStats = () => {
@@ -506,7 +619,7 @@ const Statistics: Component = () => {
                 <div class="p-6 bg-white/70 border border-rose-200 rounded-lg shadow-lg backdrop-blur-md">
                   <h2 class="text-xl font-medium text-gray-900 mb-4">Mood Trend Over Time (Last {periodOptions.find(p => p.value === selectedPeriod())?.days} days)</h2>
                   <div class="h-80">
-                    <canvas ref={moodChartRef}></canvas>
+                    <div ref={moodChartDiv} style={{ width: "100%", height: "100%" }}></div>
                   </div>
                 </div>
               )}
@@ -515,7 +628,7 @@ const Statistics: Component = () => {
               <div class="p-6 bg-white/70 border border-rose-200 rounded-lg shadow-lg backdrop-blur-md">
                 <h2 class="text-xl font-medium text-gray-900 mb-4">Journal Activity Over Time (Last {periodOptions.find(p => p.value === selectedPeriod())?.days} days)</h2>
                 <div class="h-80">
-                  <canvas ref={journalChartRef}></canvas>
+                  <div ref={journalChartDiv} style={{ width: "100%", height: "100%" }}></div>
                 </div>
               </div>
             </div>
@@ -525,12 +638,5 @@ const Statistics: Component = () => {
     </div>
   );
 };
-
-// Add Chart.js type declaration
-declare global {
-  interface Window {
-    Chart: any;
-  }
-}
 
 export default Statistics;
