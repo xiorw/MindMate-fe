@@ -39,6 +39,57 @@ function formatDateYYYYMMDD(date: Date) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+// Helper function to convert MM-DD-YYYY to YYYY-MM-DD
+function convertMMDDYYYYtoYYYYMMDD(dateStr: string) {
+  if (!dateStr) return "";
+  const parts = dateStr.split('-');
+  if (parts.length === 3 && parts[2].length === 4) {
+    const [mm, dd, yyyy] = parts;
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  return dateStr;
+}
+
+// Helper function to parse date from backend (handles multiple formats)
+function parseDateFromBackend(dateStr: string): string {
+  if (!dateStr) return "";
+  
+  // If it's ISO format (contains T), extract date part
+  if (dateStr.includes('T')) {
+    return dateStr.split('T')[0]; // Returns YYYY-MM-DD
+  }
+  
+  // If it's already YYYY-MM-DD format
+  if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    return dateStr;
+  }
+  
+  // If it's MM-DD-YYYY format, convert to YYYY-MM-DD
+  if (dateStr.match(/^\d{2}-\d{2}-\d{4}$/)) {
+    return convertMMDDYYYYtoYYYYMMDD(dateStr);
+  }
+  
+  return dateStr;
+}
+
+// Helper function specifically for mood data (uses 'date' field)
+function parseMoodDate(mood: any): string {
+  // Mood backend sends date in MM-DD-YYYY format via serialize_date function
+  if (mood.date) {
+    return parseDateFromBackend(mood.date);
+  }
+  return "";
+}
+
+// Helper function specifically for journal data (uses 'created_at' field) 
+function parseJournalDate(journal: any): string {
+  // Journal uses created_at field which can be ISO format or MM-DD-YYYY
+  if (journal.created_at) {
+    return parseDateFromBackend(journal.created_at);
+  }
+  return "";
+}
+
 function getMoodOptionByValue(moodValue: any) {
   // Handle both numeric and string mood values
   if (typeof moodValue === 'number') {
@@ -100,22 +151,32 @@ const Calendar: Component = () => {
       const moods = await moodsRes.json();
       const journals = await journalsRes.json();
 
+      console.log('Raw moods data:', moods); // Debug log
+      console.log('Raw journals data:', journals); // Debug log
+
       const moodByDate: Record<string, any> = {};
       (Array.isArray(moods) ? moods : []).forEach((mood: any) => {
-        // FIXED: Use the actual date from created_at (which represents the user-selected date)
-        // Extract only the date part, ignoring the time
-        const dateOnly = mood.created_at.split('T')[0]; // Get YYYY-MM-DD part
-        moodByDate[dateOnly] = mood;
+        // Parse the date from 'date' field (mood uses different field than journal)
+        const normalizedDate = parseMoodDate(mood);
+        console.log(`Mood entry: ${mood.date} -> normalized: ${normalizedDate}`); // Debug log
+        if (normalizedDate) {
+          moodByDate[normalizedDate] = mood;
+        }
       });
 
       const journalByDate: Record<string, any[]> = {};
       (Array.isArray(journals) ? journals : []).forEach((journal: any) => {
-        // FIXED: Use the actual date from created_at (which represents the user-selected date)
-        // Extract only the date part, ignoring the time
-        const dateOnly = journal.created_at.split('T')[0]; // Get YYYY-MM-DD part
-        if (!journalByDate[dateOnly]) journalByDate[dateOnly] = [];
-        journalByDate[dateOnly].push(journal);
+        // Parse the date from created_at field (journal uses created_at)
+        const normalizedDate = parseJournalDate(journal);
+        console.log(`Journal entry: ${journal.created_at} -> normalized: ${normalizedDate}`); // Debug log
+        if (normalizedDate) {
+          if (!journalByDate[normalizedDate]) journalByDate[normalizedDate] = [];
+          journalByDate[normalizedDate].push(journal);
+        }
       });
+
+      console.log('Final moodByDate:', moodByDate); // Debug log
+      console.log('Final journalByDate:', journalByDate); // Debug log
 
       setMoodMap(moodByDate);
       setJournalMap(journalByDate);
@@ -163,7 +224,9 @@ const Calendar: Component = () => {
   const hasData = (day: number) => {
     const date = new Date(currentDate().getFullYear(), currentDate().getMonth(), day);
     const dateStr = formatDateYYYYMMDD(date);
-    return !!(moodMap()[dateStr] || (journalMap()[dateStr]?.length ?? 0) > 0);
+    const hasDataForDay = !!(moodMap()[dateStr] || (journalMap()[dateStr]?.length ?? 0) > 0);
+    console.log(`Day ${day} (${dateStr}): hasData = ${hasDataForDay}`); // Debug log
+    return hasDataForDay;
   };
 
   const changeMonth = (offset: number) => {
@@ -173,15 +236,15 @@ const Calendar: Component = () => {
   };
 
   const handleEditMood = (mood: any) => {
-    // FIXED: Use the date part from created_at which now represents user-selected date
-    const dateOnly = mood.created_at.split('T')[0]; // Get YYYY-MM-DD
-    const [yyyy, mm, dd] = dateOnly.split('-');
+    // Parse the date from 'date' field (mood uses date field, not created_at)
+    const normalizedDate = parseMoodDate(mood);
+    const [yyyy, mm, dd] = normalizedDate.split('-');
     const formattedDate = `${mm}-${dd}-${yyyy}`; // Convert to MM-DD-YYYY
     
     // Create mood entry object with proper format for mood component
     const moodEntry = {
       id: mood.id,
-      date: dateOnly, // YYYY-MM-DD format for date input
+      date: normalizedDate, // YYYY-MM-DD format for date input
       mood: mood.mood,
       emoji: mood.emoji,
       notes: mood.notes || ""
@@ -206,9 +269,9 @@ const Calendar: Component = () => {
   };
 
   const handleEditJournal = (journal: any) => {
-    // FIXED: Use the date part from created_at which now represents user-selected date
-    const dateOnly = journal.created_at.split('T')[0]; // Get YYYY-MM-DD
-    const [yyyy, mm, dd] = dateOnly.split('-');
+    // Parse the date from created_at field (journal uses created_at)
+    const normalizedDate = parseJournalDate(journal);
+    const [yyyy, mm, dd] = normalizedDate.split('-');
     const formattedDate = `${mm}-${dd}-${yyyy}`; // Convert to MM-DD-YYYY
     
     navigate('/journal/create', { 
