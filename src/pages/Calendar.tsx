@@ -102,17 +102,19 @@ const Calendar: Component = () => {
 
       const moodByDate: Record<string, any> = {};
       (Array.isArray(moods) ? moods : []).forEach((mood: any) => {
-        const d = new Date(mood.created_at);
-        const dateKey = formatDateYYYYMMDD(d);
-        moodByDate[dateKey] = mood;
+        // FIXED: Use the actual date from created_at (which represents the user-selected date)
+        // Extract only the date part, ignoring the time
+        const dateOnly = mood.created_at.split('T')[0]; // Get YYYY-MM-DD part
+        moodByDate[dateOnly] = mood;
       });
 
       const journalByDate: Record<string, any[]> = {};
       (Array.isArray(journals) ? journals : []).forEach((journal: any) => {
-        const d = new Date(journal.created_at);
-        const dateKey = formatDateYYYYMMDD(d);
-        if (!journalByDate[dateKey]) journalByDate[dateKey] = [];
-        journalByDate[dateKey].push(journal);
+        // FIXED: Use the actual date from created_at (which represents the user-selected date)
+        // Extract only the date part, ignoring the time
+        const dateOnly = journal.created_at.split('T')[0]; // Get YYYY-MM-DD part
+        if (!journalByDate[dateOnly]) journalByDate[dateOnly] = [];
+        journalByDate[dateOnly].push(journal);
       });
 
       setMoodMap(moodByDate);
@@ -171,15 +173,15 @@ const Calendar: Component = () => {
   };
 
   const handleEditMood = (mood: any) => {
-    // Navigate to mood page with editing state
-    // Convert YYYY-MM-DD format to MM-DD-YYYY format expected by mood component
-    const createdAtDate = new Date(mood.created_at);
-    const formattedDate = formatDateMMDDYYYY(createdAtDate);
+    // FIXED: Use the date part from created_at which now represents user-selected date
+    const dateOnly = mood.created_at.split('T')[0]; // Get YYYY-MM-DD
+    const [yyyy, mm, dd] = dateOnly.split('-');
+    const formattedDate = `${mm}-${dd}-${yyyy}`; // Convert to MM-DD-YYYY
     
     // Create mood entry object with proper format for mood component
     const moodEntry = {
       id: mood.id,
-      date: formatDateYYYYMMDD(createdAtDate), // YYYY-MM-DD format for date input
+      date: dateOnly, // YYYY-MM-DD format for date input
       mood: mood.mood,
       emoji: mood.emoji,
       notes: mood.notes || ""
@@ -204,10 +206,15 @@ const Calendar: Component = () => {
   };
 
   const handleEditJournal = (journal: any) => {
+    // FIXED: Use the date part from created_at which now represents user-selected date
+    const dateOnly = journal.created_at.split('T')[0]; // Get YYYY-MM-DD
+    const [yyyy, mm, dd] = dateOnly.split('-');
+    const formattedDate = `${mm}-${dd}-${yyyy}`; // Convert to MM-DD-YYYY
+    
     navigate('/journal/create', { 
       state: { 
         journal,
-        date: formatDateMMDDYYYY(new Date(journal.created_at))
+        date: formattedDate
       } as any
     });
   };
