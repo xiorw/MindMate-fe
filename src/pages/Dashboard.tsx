@@ -362,33 +362,58 @@ const Dashboard: Component = () => {
     });
   });
 
-  // Calculate journal writing streak
+  // Calculate journal writing streak based on consecutive days up to today
   const calculateJournalStreak = (journals: JournalEntry[]) => {
     if (journals.length === 0) {
       setJournalStreak(0);
       return;
     }
 
-    // Sort journals by date (newest first)
-    const sortedJournals = journals.sort((a, b) => 
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
+    // Filter journals to only include entries created on the same day (not backdated/future dated)
+    const validJournals = journals.filter(journal => {
+      const journalCreatedAt = new Date(journal.created_at);
+      const journalCreatedDate = journalCreatedAt.toISOString().split('T')[0];
+      
+      // Only count journals that were created on or before today
+      const today = new Date().toISOString().split('T')[0];
+      return journalCreatedDate <= today;
+    });
+
+    // Group valid journals by the date they were created (not backdated)
+    const journalsByDate = new Set<string>();
+    
+    validJournals.forEach(journal => {
+      const createdDate = new Date(journal.created_at);
+      // Format as YYYY-MM-DD for consistent comparison
+      const dateKey = createdDate.toISOString().split('T')[0];
+      journalsByDate.add(dateKey);
+    });
+
+    if (journalsByDate.size === 0) {
+      setJournalStreak(0);
+      return;
+    }
 
     let streak = 0;
-    let currentDate = new Date();
-    currentDate.setHours(0, 0, 0, 0);
-
-    for (const journal of sortedJournals) {
-      const journalDate = new Date(journal.created_at);
-      journalDate.setHours(0, 0, 0, 0);
-
-      const diffTime = currentDate.getTime() - journalDate.getTime();
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-
-      if (diffDays === streak || (streak === 0 && diffDays === 0)) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Start checking from today
+    let currentDate = new Date(today);
+    
+    // Count consecutive days with journal entries starting from today going backwards
+    while (true) {
+      const checkDateString = currentDate.toISOString().split('T')[0];
+      
+      // If current date has a journal entry, increment streak
+      if (journalsByDate.has(checkDateString)) {
         streak++;
+        // Move to previous day
         currentDate.setDate(currentDate.getDate() - 1);
       } else {
+        // No journal entry for this date
+        // If this is the first day we're checking (today) and no entry, streak is 0
+        // If we already have some streak, this breaks the consecutive days
         break;
       }
     }

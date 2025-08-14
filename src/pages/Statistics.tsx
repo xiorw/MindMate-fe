@@ -81,17 +81,32 @@ const Statistics: Component = () => {
   const [journalData, setJournalData] = createSignal<any[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
+  const [selectedPeriod, setSelectedPeriod] = createSignal('last_30_days');
+  const [isDropdownOpen, setIsDropdownOpen] = createSignal(false);
   
   let moodChartRef: HTMLCanvasElement | undefined;
   let journalChartRef: HTMLCanvasElement | undefined;
   let moodChart: any;
   let journalChart: any;
 
-  // Get date range for last 30 days
+  const periodOptions = [
+  { value: 'recent', label: 'Recent (Last 7 days)', days: 7 },
+  { value: 'last_3_days', label: 'Last 3 days', days: 3 },
+  { value: 'last_7_days', label: 'Last 7 days', days: 7 },
+  { value: 'last_month', label: 'Last Month', days: 30 },
+  { value: 'last_30_days', label: 'Last 30 days', days: 30 },
+  { value: 'all_time', label: 'All Time', days: 365 }
+];
+
+// Get date range based on selected period
   const getDateRange = () => {
     const endDate = new Date();
     const startDate = new Date(endDate);
-    startDate.setDate(startDate.getDate() - 30);
+    
+    const period = periodOptions.find(p => p.value === selectedPeriod());
+    const daysToSubtract = period ? period.days : 30;
+    
+    startDate.setDate(startDate.getDate() - daysToSubtract);
     
     return {
       start: formatDateMMDDYYYY(startDate),
@@ -171,11 +186,13 @@ const Statistics: Component = () => {
       console.log('Processed moodsByDate:', moodsByDate); // Debug log
       console.log('Processed journalsByDate:', journalsByDate); // Debug log
 
-      // Create chart data for last 30 days
+      // Create chart data based on selected period
       const chartData: any[] = [];
       const endDate = new Date();
+      const period = periodOptions.find(p => p.value === selectedPeriod());
+      const daysToShow = period ? period.days : 30;
       
-      for (let i = 29; i >= 0; i--) {
+      for (let i = daysToShow - 1; i >= 0; i--) {
         const date = new Date(endDate);
         date.setDate(date.getDate() - i);
         const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD format
@@ -344,6 +361,13 @@ const Statistics: Component = () => {
     }
   };
 
+  // Re-fetch data when period changes
+  createEffect(() => {
+    if (selectedPeriod()) {
+      fetchStatisticsData();
+    }
+  });
+
   createEffect(() => {
     setTimeout(() => setIsVisible(true), 100);
     fetchStatisticsData();
@@ -384,7 +408,45 @@ const Statistics: Component = () => {
     <div class="min-h-screen bg-gradient-to-br from-rose-50 to-pink-50">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div class={`transition-all duration-1000 ${isVisible() ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
-          <h1 class="text-3xl md:text-4xl font-bold text-rose-700 mb-6">Statistics</h1>
+          <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl md:text-4xl font-bold text-rose-700">Statistics</h1>
+            
+            {/* Time Period Selector */}
+            <div class="relative">
+              <button
+                onClick={() => setIsDropdownOpen(!isDropdownOpen())}
+                class="flex items-center justify-between w-48 p-2 border border-gray-300 rounded-lg focus:ring-rose-200 focus:border-rose-700 focus:outline-none bg-white text-gray-700 hover:border-rose-400 transition-colors"
+              >
+                <span>{periodOptions.find(p => p.value === selectedPeriod())?.label}</span>
+                <svg 
+                  class={`w-4 h-4 transition-transform duration-200 ${isDropdownOpen() ? 'rotate-180' : 'rotate-0'}`}
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+              </button>
+              
+              {isDropdownOpen() && (
+                <div class="absolute top-full mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg z-10">
+                  {periodOptions.map((option) => (
+                    <button
+                      onClick={() => {
+                        setSelectedPeriod(option.value);
+                        setIsDropdownOpen(false);
+                      }}
+                      class={`w-full text-left px-3 py-2 hover:bg-rose-50 hover:text-rose-700 transition-colors first:rounded-t-lg last:rounded-b-lg ${
+                        selectedPeriod() === option.value ? 'bg-rose-50 text-rose-700' : 'text-gray-700'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
 
           {error() && (
             <div class="mb-4 p-4 text-sm text-red-800 bg-red-100 rounded-lg">
@@ -418,14 +480,16 @@ const Statistics: Component = () => {
                           <div class="p-6 bg-white/70 border border-rose-200 rounded-lg shadow-lg backdrop-blur-md">
                             <h3 class="text-lg font-medium text-gray-900 mb-2">Mood Entries</h3>
                             <p class="text-3xl font-bold text-rose-700">{moodStats.count}</p>
-                            <p class="text-sm text-gray-600">Last 30 days</p>
+                            <p class="text-sm text-gray-600">
+                              Last {periodOptions.find(p => p.value === selectedPeriod())?.days} days
+                            </p>
                           </div>
                         </>
                       )}
                       <div class="p-6 bg-white/70 border border-rose-200 rounded-lg shadow-lg backdrop-blur-md">
                         <h3 class="text-lg font-medium text-gray-900 mb-2">Journal Entries</h3>
                         <p class="text-3xl font-bold text-rose-700">{journalStats.total}</p>
-                        <p class="text-sm text-gray-600">Last 30 days</p>
+                        <p class="text-sm text-gray-600">Last {periodOptions.find(p => p.value === selectedPeriod())?.days} days</p>
                       </div>
                       <div class="p-6 bg-white/70 border border-rose-200 rounded-lg shadow-lg backdrop-blur-md">
                         <h3 class="text-lg font-medium text-gray-900 mb-2">Active Days</h3>
@@ -440,7 +504,7 @@ const Statistics: Component = () => {
               {/* Mood Chart */}
               {moodData().length > 0 && (
                 <div class="p-6 bg-white/70 border border-rose-200 rounded-lg shadow-lg backdrop-blur-md">
-                  <h2 class="text-xl font-medium text-gray-900 mb-4">Mood Trend Over Time (Last 30 days)</h2>
+                  <h2 class="text-xl font-medium text-gray-900 mb-4">Mood Trend Over Time (Last {periodOptions.find(p => p.value === selectedPeriod())?.days} days)</h2>
                   <div class="h-80">
                     <canvas ref={moodChartRef}></canvas>
                   </div>
@@ -449,7 +513,7 @@ const Statistics: Component = () => {
 
               {/* Journal Chart */}
               <div class="p-6 bg-white/70 border border-rose-200 rounded-lg shadow-lg backdrop-blur-md">
-                <h2 class="text-xl font-medium text-gray-900 mb-4">Journal Activity Over Time (Last 30 days)</h2>
+                <h2 class="text-xl font-medium text-gray-900 mb-4">Journal Activity Over Time (Last {periodOptions.find(p => p.value === selectedPeriod())?.days} days)</h2>
                 <div class="h-80">
                   <canvas ref={journalChartRef}></canvas>
                 </div>
