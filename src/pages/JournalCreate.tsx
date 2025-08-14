@@ -3,46 +3,73 @@ import { useNavigate, useLocation } from "@solidjs/router";
 
 const API_URL = "https://mindmate-be-production.up.railway.app/api/journals";
 
+// Helper function to convert YYYY-MM-DD to MM-DD-YYYY
+function convertToMMDDYYYY(dateStr: string) {
+  if (!dateStr) return "";
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    const [yyyy, mm, dd] = parts;
+    return `${mm}-${dd}-${yyyy}`;
+  }
+  return dateStr;
+}
+
+// Helper function to convert MM-DD-YYYY to YYYY-MM-DD
+function convertToYYYYMMDD(dateStr: string) {
+  if (!dateStr) return "";
+  const parts = dateStr.split('-');
+  if (parts.length === 3 && parts[2].length === 4) {
+    const [mm, dd, yyyy] = parts;
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  return dateStr;
+}
+
+// Helper function to get initial date value
+function getInitialDate(editingJournal: any, stateDate: string | null): string {
+  if (editingJournal) {
+    // For editing: get the date from created_at field
+    const createdAt = editingJournal.created_at;
+    if (createdAt.includes('T')) {
+      // ISO format: extract date part and keep as YYYY-MM-DD
+      return createdAt.split('T')[0];
+    } else if (createdAt.length === 10 && createdAt.includes('-')) {
+      // Could be YYYY-MM-DD or MM-DD-YYYY
+      const parts = createdAt.split('-');
+      if (parts[0].length === 4) {
+        // Already YYYY-MM-DD
+        return createdAt;
+      } else {
+        // MM-DD-YYYY, convert to YYYY-MM-DD
+        return convertToYYYYMMDD(createdAt);
+      }
+    }
+    return createdAt;
+  } else if (stateDate) {
+    // From calendar: MM-DD-YYYY format, convert to YYYY-MM-DD for input
+    return convertToYYYYMMDD(stateDate);
+  } else {
+    // Default to today
+    return new Date().toISOString().split('T')[0];
+  }
+}
 
 const JournalCreate: Component = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const editingJournal = (location.state && (location.state as { journal?: any }).journal) ? (location.state as { journal: any }).journal : null;
+  const stateDate = (location.state && (location.state as { date?: string }).date) ? (location.state as { date: string }).date : null;
 
   const [title, setTitle] = createSignal(editingJournal?.title || "");
   const [content, setContent] = createSignal(editingJournal?.content || "");
-  const [date, setDate] = createSignal(
-    editingJournal
-      ? (editingJournal.created_at.length === 10 && editingJournal.created_at.includes('-')
-          ? (() => {
-              // MM-DD-YYYY or YYYY-MM-DD
-              const parts = editingJournal.created_at.split("-");
-              if (parts[0].length === 4) {
-                // YYYY-MM-DD
-                return editingJournal.created_at;
-              } else {
-                // MM-DD-YYYY
-                return `${parts[2]}-${parts[0]}-${parts[1]}`;
-              }
-            })()
-          : editingJournal.created_at)
-      : new Date().toISOString().split('T')[0]
-  );
+  const [date, setDate] = createSignal(getInitialDate(editingJournal, stateDate));
+  
   const [error, setError] = createSignal("");
   const [isVisible, setIsVisible] = createSignal(false);
   const [loading, setLoading] = createSignal(false);
 
   createEffect(() => {
     setTimeout(() => setIsVisible(true), 100);
-  });
-
-  // If editing, update fields if location.state changes
-  onMount(() => {
-    if (editingJournal) {
-      setTitle(editingJournal.title);
-      setContent(editingJournal.content);
-      // Already set above
-    }
   });
 
   const handleSubmit = async () => {
@@ -65,9 +92,12 @@ const JournalCreate: Component = () => {
     }
 
     try {
+      // Convert YYYY-MM-DD to MM-DD-YYYY for backend
+      const formattedDate = convertToMMDDYYYY(date());
+      
       let res;
       if (editingJournal) {
-        // Update
+        // Update - use created_at field
         res = await fetch(`${API_URL}/${editingJournal.id}`, {
           method: "PUT",
           headers: {
@@ -77,11 +107,11 @@ const JournalCreate: Component = () => {
           body: JSON.stringify({
             title: title().trim(),
             content: content().trim(),
-            created_at: date(),
+            created_at: formattedDate, // Use created_at and MM-DD-YYYY format
           }),
         });
       } else {
-        // Create
+        // Create - use created_at field (not date)
         res = await fetch(API_URL, {
           method: "POST",
           headers: {
@@ -91,16 +121,18 @@ const JournalCreate: Component = () => {
           body: JSON.stringify({
             title: title().trim(),
             content: content().trim(),
-            date: date(),
+            created_at: formattedDate, // Use created_at and MM-DD-YYYY format
           }),
         });
       }
+      
       if (!res.ok) {
         const result = await res.json();
         setError(result.message || "Gagal menyimpan journal.");
         setLoading(false);
         return;
       }
+      
       setLoading(false);
       navigate('/journal');
     } catch {
