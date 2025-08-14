@@ -1,4 +1,7 @@
-import { Component, createSignal, createEffect, onMount, onCleanup } from "solid-js";
+import { Component, createSignal, createEffect, onMount } from "solid-js";
+import * as am5 from "@amcharts/amcharts5";
+import * as am5xy from "@amcharts/amcharts5/xy";
+import am5themes_Animated from "@amcharts/amcharts5/themes/Animated";
 
 const MOOD_API_URL = "https://mindmate-be-production.up.railway.app/api/moods";
 const JOURNAL_API_URL = "https://mindmate-be-production.up.railway.app/api/journals";
@@ -75,14 +78,6 @@ function formatDateMMDDYYYY(date: Date) {
   return `${mm}-${dd}-${yyyy}`;
 }
 
-// amCharts 5 type declarations
-declare global {
-  interface Window {
-    am5: any;
-    am5xy: any;
-  }
-}
-
 const Statistics: Component = () => {
   const [isVisible, setIsVisible] = createSignal(false);
   const [moodData, setMoodData] = createSignal<any[]>([]);
@@ -94,8 +89,8 @@ const Statistics: Component = () => {
   
   let moodChartDiv: HTMLDivElement | undefined;
   let journalChartDiv: HTMLDivElement | undefined;
-  let moodChartRoot: any;
-  let journalChartRoot: any;
+  let moodRoot: am5.Root | undefined;
+  let journalRoot: am5.Root | undefined;
 
   const periodOptions = [
     { value: 'recent', label: 'Recent (Last 7 days)', days: 7 },
@@ -216,7 +211,7 @@ const Statistics: Component = () => {
         chartData.push({
           date: formatDateForDisplay(dateStr),
           fullDate: dateStr,
-          dateObj: date.getTime(), // For amCharts date axis
+          dateValue: date.getTime(),
           mood: avgMood,
           journals: journalCount
         });
@@ -238,254 +233,226 @@ const Statistics: Component = () => {
     }
   };
 
-  const loadAmCharts = async () => {
-    if (window.am5 && window.am5xy) return Promise.resolve();
-    
-    const loadScript = (src: string) => {
-      return new Promise((resolve, reject) => {
-        // Check if script already exists
-        const existingScript = document.querySelector(`script[src="${src}"]`);
-        if (existingScript) {
-          resolve(null);
-          return;
-        }
-
-        const script = document.createElement('script');
-        script.src = src;
-        script.onload = resolve;
-        script.onerror = (error) => {
-          console.error(`Failed to load script: ${src}`, error);
-          reject(error);
-        };
-        document.head.appendChild(script);
-      });
-    };
-
-    try {
-      // Load amCharts 5 core - using a different CDN
-      await loadScript('https://cdn.amcharts.com/lib/5/index.js');
-      // Load XY chart
-      await loadScript('https://cdn.amcharts.com/lib/5/xy.js');
-      // Load themes
-      await loadScript('https://cdn.amcharts.com/lib/5/themes/Animated.js');
-      
-      // Wait a bit for the scripts to initialize
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Verify that the libraries loaded correctly
-      if (!window.am5) {
-        throw new Error('amCharts 5 core library failed to load');
-      }
-      if (!window.am5xy) {
-        throw new Error('amCharts 5 XY library failed to load');
-      }
-    } catch (error) {
-      console.error('Error loading amCharts:', error);
-      throw error;
+  const updateCharts = () => {
+    // Dispose existing charts
+    if (moodRoot) {
+      moodRoot.dispose();
+      moodRoot = undefined;
     }
-  };
+    if (journalRoot) {
+      journalRoot.dispose();
+      journalRoot = undefined;
+    }
 
-  const updateCharts = async () => {
-    if (typeof window === 'undefined') return;
-    
-    try {
-      await loadAmCharts();
-      const am5 = window.am5;
-      const am5xy = window.am5xy;
+    // Create mood chart
+    if (moodChartDiv && moodData().length > 0) {
+      const newMoodRoot = am5.Root.new(moodChartDiv);
+      moodRoot = newMoodRoot;
       
-      // Dispose existing charts
-      if (moodChartRoot) {
-        moodChartRoot.dispose();
-      }
-      if (journalChartRoot) {
-        journalChartRoot.dispose();
-      }
+      // Set themes
+      newMoodRoot.setThemes([
+        am5themes_Animated.new(newMoodRoot)
+      ]);
 
-      // Create mood chart
-      if (moodChartDiv && moodData().length > 0) {
-        moodChartRoot = am5.Root.new(moodChartDiv);
-        
-        // Set themes
-        moodChartRoot.setThemes([
-          am5.themes_Animated.new(moodChartRoot)
-        ]);
+      // Create chart
+      let moodChart = newMoodRoot.container.children.push(am5xy.XYChart.new(newMoodRoot, {
+        panX: true,
+        panY: true,
+        wheelX: "panX",
+        wheelY: "zoomX",
+        paddingLeft: 0,
+        paddingRight: 1
+      }));
 
-        // Create chart
-        const moodChart = moodChartRoot.container.children.push(
-          am5xy.XYChart.new(moodChartRoot, {
-            panX: true,
-            panY: true,
-            wheelX: "panX",
-            wheelY: "zoomX",
-            paddingLeft: 0
-          })
-        );
+      // Add cursor
+      let cursor = moodChart.set("cursor", am5xy.XYCursor.new(newMoodRoot, {}));
+      cursor.lineY.set("visible", false);
 
-        // Create axes
-        const xAxis = moodChart.xAxes.push(
-          am5xy.DateAxis.new(moodChartRoot, {
-            maxZoomCount: 50,
-            baseInterval: {
-              timeUnit: "day",
-              count: 1
-            },
-            renderer: am5xy.AxisRendererX.new(moodChartRoot, {
-              minGridDistance: 50
-            }),
-            tooltip: am5.Tooltip.new(moodChartRoot, {})
-          })
-        );
+      // Create axes
+      let xRenderer = am5xy.AxisRendererX.new(newMoodRoot, { 
+        minGridDistance: 30,
+        minorGridEnabled: true
+      });
 
-        const yAxis = moodChart.yAxes.push(
-          am5xy.ValueAxis.new(moodChartRoot, {
-            min: 1,
-            max: 5,
-            renderer: am5xy.AxisRendererY.new(moodChartRoot, {})
-          })
-        );
+      xRenderer.labels.template.setAll({
+        rotation: -90,
+        centerY: am5.p50,
+        centerX: am5.p100,
+        paddingRight: 15
+      });
 
-        // Create series
-        const moodSeries = moodChart.series.push(
-          am5xy.LineSeries.new(moodChartRoot, {
-            name: "Mood Level",
-            xAxis: xAxis,
-            yAxis: yAxis,
-            valueYField: "mood",
-            valueXField: "dateObj",
-            tooltip: am5.Tooltip.new(moodChartRoot, {
-              labelText: "Date: {fullDate}\nMood: {mood} ({moodLabel})"
-            }),
+      xRenderer.grid.template.setAll({
+        location: 1
+      })
+
+      let xAxis = moodChart.xAxes.push(am5xy.CategoryAxis.new(newMoodRoot, {
+        maxZoomCount: 30,
+        categoryField: "date",
+        renderer: xRenderer,
+        tooltip: am5.Tooltip.new(newMoodRoot, {})
+      }));
+
+      let yRenderer = am5xy.AxisRendererY.new(newMoodRoot, {
+        strokeOpacity: 0.1
+      })
+
+      let yAxis = moodChart.yAxes.push(am5xy.ValueAxis.new(newMoodRoot, {
+        min: 1,
+        max: 5,
+        strictMinMax: true,
+        renderer: yRenderer
+      }));
+
+      // Create series
+      let series = moodChart.series.push(am5xy.LineSeries.new(newMoodRoot, {
+        name: "Mood Level",
+        xAxis: xAxis,
+        yAxis: yAxis,
+        valueYField: "mood",
+        categoryXField: "date",
+        tooltip: am5.Tooltip.new(newMoodRoot, {
+          labelText: "Date: {fullDate}\nMood: {valueY} ({moodLabel})"
+        }),
+        stroke: am5.color("#be185d"),
+        fill: am5.color("#be185d")
+      }));
+
+      // Configure series
+      series.strokes.template.setAll({
+        strokeWidth: 2
+      });
+
+      series.fills.template.setAll({
+        fillOpacity: 0.1,
+        visible: true
+      });
+
+      series.bullets.push(function () {
+        return am5.Bullet.new(newMoodRoot, {
+          locationY: 0,
+          sprite: am5.Circle.new(newMoodRoot, {
+            radius: 4,
             stroke: am5.color("#be185d"),
-            fill: am5.color("#be185d")
+            strokeWidth: 2,
+            fill: am5.color("#ffffff")
           })
-        );
-
-        // Add fill gradient
-        moodSeries.fills.template.setAll({
-          fillOpacity: 0.2,
-          visible: true
         });
+      });
 
-        // Add circle bullet
-        moodSeries.bullets.push(() => {
-          return am5.Bullet.new(moodChartRoot, {
-            sprite: am5.Circle.new(moodChartRoot, {
-              radius: 4,
-              fill: am5.color("#be185d"),
-              stroke: am5.color("#ffffff"),
-              strokeWidth: 2
-            })
-          });
-        });
+      // Add data with mood labels
+      const moodDataWithLabels = moodData().map(d => ({
+        ...d,
+        moodLabel: getMoodLabel(d.mood)
+      }));
 
-        // Prepare data with mood labels
-        const moodChartData = moodData().map(d => ({
-          ...d,
-          moodLabel: getMoodLabel(d.mood)
-        }));
+      xAxis.data.setAll(moodDataWithLabels);
+      series.data.setAll(moodDataWithLabels);
 
-        moodSeries.data.setAll(moodChartData);
+      // Make stuff animate on load
+      series.appear(1000);
+      moodChart.appear(1000, 100);
+    }
 
-        // Add cursor
-        moodChart.set("cursor", am5xy.XYCursor.new(moodChartRoot, {
-          behavior: "none"
-        }));
+    // Create journal chart
+    if (journalChartDiv) {
+      const newJournalRoot = am5.Root.new(journalChartDiv);
+      journalRoot = newJournalRoot;
+      
+      // Set themes
+      newJournalRoot.setThemes([
+        am5themes_Animated.new(newJournalRoot)
+      ]);
 
-        // Make stuff animate on load
-        moodSeries.appear(1000);
-        moodChart.appear(1000, 100);
-      }
+      // Create chart
+      let journalChart = newJournalRoot.container.children.push(am5xy.XYChart.new(newJournalRoot, {
+        panX: true,
+        panY: true,
+        wheelX: "panX",
+        wheelY: "zoomX",
+        paddingLeft: 0,
+        paddingRight: 1
+      }));
 
-      // Create journal chart
-      if (journalChartDiv) {
-        journalChartRoot = am5.Root.new(journalChartDiv);
-        
-        // Set themes
-        journalChartRoot.setThemes([
-          am5.themes_Animated.new(journalChartRoot)
-        ]);
+      // Add cursor
+      let cursor = journalChart.set("cursor", am5xy.XYCursor.new(newJournalRoot, {}));
+      cursor.lineY.set("visible", false);
 
-        // Create chart
-        const journalChart = journalChartRoot.container.children.push(
-          am5xy.XYChart.new(journalChartRoot, {
-            panX: true,
-            panY: true,
-            wheelX: "panX",
-            wheelY: "zoomX",
-            paddingLeft: 0
-          })
-        );
+      // Create axes
+      let xRenderer = am5xy.AxisRendererX.new(newJournalRoot, { 
+        minGridDistance: 30,
+        minorGridEnabled: true
+      });
 
-        // Create axes
-        const xAxis = journalChart.xAxes.push(
-          am5xy.DateAxis.new(journalChartRoot, {
-            maxZoomCount: 50,
-            baseInterval: {
-              timeUnit: "day",
-              count: 1
-            },
-            renderer: am5xy.AxisRendererX.new(journalChartRoot, {
-              minGridDistance: 50
-            }),
-            tooltip: am5.Tooltip.new(journalChartRoot, {})
-          })
-        );
+      xRenderer.labels.template.setAll({
+        rotation: -90,
+        centerY: am5.p50,
+        centerX: am5.p100,
+        paddingRight: 15
+      });
 
-        const yAxis = journalChart.yAxes.push(
-          am5xy.ValueAxis.new(journalChartRoot, {
-            min: 0,
-            renderer: am5xy.AxisRendererY.new(journalChartRoot, {})
-          })
-        );
+      xRenderer.grid.template.setAll({
+        location: 1
+      })
 
-        // Create series
-        const journalSeries = journalChart.series.push(
-          am5xy.LineSeries.new(journalChartRoot, {
-            name: "Journal Entries",
-            xAxis: xAxis,
-            yAxis: yAxis,
-            valueYField: "journals",
-            valueXField: "dateObj",
-            tooltip: am5.Tooltip.new(journalChartRoot, {
-              labelText: "Date: {fullDate}\nJournal Entries: {journals}"
-            }),
+      let xAxis = journalChart.xAxes.push(am5xy.CategoryAxis.new(newJournalRoot, {
+        maxZoomCount: 30,
+        categoryField: "date",
+        renderer: xRenderer,
+        tooltip: am5.Tooltip.new(newJournalRoot, {})
+      }));
+
+      let yRenderer = am5xy.AxisRendererY.new(newJournalRoot, {
+        strokeOpacity: 0.1
+      })
+
+      let yAxis = journalChart.yAxes.push(am5xy.ValueAxis.new(newJournalRoot, {
+        min: 0,
+        renderer: yRenderer
+      }));
+
+      // Create series
+      let series = journalChart.series.push(am5xy.LineSeries.new(newJournalRoot, {
+        name: "Journal Entries",
+        xAxis: xAxis,
+        yAxis: yAxis,
+        valueYField: "journals",
+        categoryXField: "date",
+        tooltip: am5.Tooltip.new(newJournalRoot, {
+          labelText: "Date: {fullDate}\nJournal Entries: {valueY}"
+        }),
+        stroke: am5.color("#059669"),
+        fill: am5.color("#059669")
+      }));
+
+      // Configure series
+      series.strokes.template.setAll({
+        strokeWidth: 2
+      });
+
+      series.fills.template.setAll({
+        fillOpacity: 0.1,
+        visible: true
+      });
+
+      series.bullets.push(function () {
+        return am5.Bullet.new(newJournalRoot, {
+          locationY: 0,
+          sprite: am5.Circle.new(newJournalRoot, {
+            radius: 4,
             stroke: am5.color("#059669"),
-            fill: am5.color("#059669")
+            strokeWidth: 2,
+            fill: am5.color("#ffffff")
           })
-        );
-
-        // Add fill gradient
-        journalSeries.fills.template.setAll({
-          fillOpacity: 0.2,
-          visible: true
         });
+      });
 
-        // Add circle bullet
-        journalSeries.bullets.push(() => {
-          return am5.Bullet.new(journalChartRoot, {
-            sprite: am5.Circle.new(journalChartRoot, {
-              radius: 4,
-              fill: am5.color("#059669"),
-              stroke: am5.color("#ffffff"),
-              strokeWidth: 2
-            })
-          });
-        });
+      // Add data
+      xAxis.data.setAll(journalData());
+      series.data.setAll(journalData());
 
-        journalSeries.data.setAll(journalData());
-
-        // Add cursor
-        journalChart.set("cursor", am5xy.XYCursor.new(journalChartRoot, {
-          behavior: "none"
-        }));
-
-        // Make stuff animate on load
-        journalSeries.appear(1000);
-        journalChart.appear(1000, 100);
-      }
-    } catch (error) {
-      console.error('Error loading amCharts or creating charts:', error);
-      setError("Failed to load charts");
+      // Make stuff animate on load
+      series.appear(1000);
+      journalChart.appear(1000, 100);
     }
   };
 
@@ -502,16 +469,10 @@ const Statistics: Component = () => {
   });
 
   onMount(() => {
-    // Cleanup function will be called on unmount
-  });
-
-  onCleanup(() => {
-    if (moodChartRoot) {
-      moodChartRoot.dispose();
-    }
-    if (journalChartRoot) {
-      journalChartRoot.dispose();
-    }
+    return () => {
+      if (moodRoot) moodRoot.dispose();
+      if (journalRoot) journalRoot.dispose();
+    };
   });
 
   const getMoodStats = () => {
@@ -640,7 +601,7 @@ const Statistics: Component = () => {
                 <div class="p-6 bg-white/70 border border-rose-200 rounded-lg shadow-lg backdrop-blur-md">
                   <h2 class="text-xl font-medium text-gray-900 mb-4">Mood Trend Over Time (Last {periodOptions.find(p => p.value === selectedPeriod())?.days} days)</h2>
                   <div class="h-80">
-                    <div ref={moodChartDiv} style={{ width: "100%", height: "100%" }}></div>
+                    <div ref={moodChartDiv} class="w-full h-full"></div>
                   </div>
                 </div>
               )}
@@ -649,7 +610,7 @@ const Statistics: Component = () => {
               <div class="p-6 bg-white/70 border border-rose-200 rounded-lg shadow-lg backdrop-blur-md">
                 <h2 class="text-xl font-medium text-gray-900 mb-4">Journal Activity Over Time (Last {periodOptions.find(p => p.value === selectedPeriod())?.days} days)</h2>
                 <div class="h-80">
-                  <div ref={journalChartDiv} style={{ width: "100%", height: "100%" }}></div>
+                  <div ref={journalChartDiv} class="w-full h-full"></div>
                 </div>
               </div>
             </div>
