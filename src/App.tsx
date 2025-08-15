@@ -17,7 +17,7 @@ const App: Component<AppProps> = (props) => {
     "/mood-tracker",
     "/daily-journal",
     "/personal-stats",
-    "/activity-suggestions",
+    "/daily-motivation",
     "/help",
     "/contact-psychologist",
     "/privacy",

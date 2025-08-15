@@ -8,7 +8,7 @@ import Dashboard from "../pages/Dashboard";
 import MoodTracker from "../pages/MoodTracker";
 import DailyJournal from "../pages/DailyJournal";
 import PersonalStats from "../pages/PersonalStats";
-import ActivitySuggestions from "../pages/ActivitySuggestions";
+import DailyMotivation from "../pages/DailyMotivation";
 
 import HelpCenter from "../pages/HelpCenter";
 import ContactPsychologist from "../pages/ContactPsychologist";
@@ -36,7 +36,7 @@ const AppRoutes: Component = () => {
       <Route path="/mood-tracker" component={() => <App><MoodTracker /></App>} />
       <Route path="/daily-journal" component={() => <App><DailyJournal /></App>} />
       <Route path="/personal-stats" component={() => <App><PersonalStats /></App>} />
-      <Route path="/activity-suggestions" component={() => <App><ActivitySuggestions /></App>} />
+      <Route path="/daily-motivation" component={() => <App><DailyMotivation /></App>} />
 
       <Route path="/help" component={() => <App><HelpCenter /></App>} />
       <Route path="/contact-psychologist" component={() => <App><ContactPsychologist /></App>} />
