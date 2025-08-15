@@ -16,8 +16,8 @@ const Footer: Component = () => {
       case "Personal Stats":
         navigate("/personal-stats");
         break;
-      case "Activity Suggestions":
-        navigate("/activity-suggestions");
+      case "Daily Motivation":
+        navigate("/daily-motivation");
         break;
       case "Help Center":
         navigate("/help");
