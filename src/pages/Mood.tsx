@@ -1,5 +1,8 @@
 import { Component, createSignal, createEffect } from "solid-js";
 import { useNavigate, useLocation } from "@solidjs/router";
+import AgGrid from "ag-grid-solid";
+import "ag-grid-community/styles/ag-grid.css";
+import "ag-grid-community/styles/ag-theme-alpine.css";
 
 // Define types for location state
 interface LocationState {
@@ -45,6 +48,7 @@ const Mood: Component = () => {
   const [error, setError] = createSignal<string | null>(null);
   const [popupMood, setPopupMood] = createSignal<MoodEntry | null>(null);
   const [editId, setEditId] = createSignal<number | null>(null);
+  const [gridApi, setGridApi] = createSignal<any | null>(null);
 
   // Check if we're in editing mode from calendar navigation
   createEffect(() => {
@@ -54,10 +58,9 @@ const Mood: Component = () => {
       setCurrentMood(moodEntry.mood);
       setCurrentEmoji(moodEntry.emoji);
       setMoodNotes(moodEntry.notes || "");
-      setMoodDate(moodEntry.date); // Should be in YYYY-MM-DD format
+      setMoodDate(moodEntry.date);
       setEditId(moodEntry.id);
     } else if (state?.date) {
-      // If just setting date from calendar (add mode)
       const [mm, dd, yyyy] = state.date.split("-");
       setMoodDate(`${yyyy}-${mm}-${dd}`);
     }
@@ -106,7 +109,6 @@ const Mood: Component = () => {
       try {
         let res;
         if (editId()) {
-          // Update
           res = await fetch(`${API_URL}/${editId()}`, {
             method: "PUT",
             headers: {
@@ -121,7 +123,6 @@ const Mood: Component = () => {
             }),
           });
         } else {
-          // Create
           res = await fetch(API_URL, {
             method: "POST",
             headers: {
@@ -154,7 +155,6 @@ const Mood: Component = () => {
         setEditId(null);
         setError(null);
         
-        // If we came from calendar, navigate back
         const state = location.state as LocationState | undefined;
         if (state?.isEditing) {
           navigate('/calendar');
@@ -219,11 +219,124 @@ const Mood: Component = () => {
     setMoodDate(new Date().toISOString().slice(0, 10));
     setEditId(null);
     
-    // If we came from calendar, navigate back
     const state = location.state as LocationState | undefined;
     if (state?.isEditing) {
       navigate('/calendar');
     }
+  };
+
+  // Custom cell renderer for mood
+  const MoodCellRenderer = (params: any) => {
+    const moodOption = moodOptions.find(m => m.value === params.data.mood);
+    return (
+      <div class="flex items-center justify-center h-full">
+        <span class="text-lg mr-2">{params.data.emoji}</span>
+        <span class={moodOption?.textColor || 'text-gray-600'}>
+          {moodOption?.label || params.data.mood}
+        </span>
+      </div>
+    );
+  };
+
+  // Custom cell renderer for notes
+  const NotesCellRenderer = (params: any) => {
+    const notes = params.data.notes;
+    const truncated = notes && notes.length > 30 ? notes.slice(0, 30) + "..." : notes || "";
+    return <div class="flex items-center justify-center h-full text-center">{truncated}</div>;
+  };
+
+  // Custom cell renderer for actions
+  const ActionsCellRenderer = (params: any) => {
+    const entry = params.data;
+    return (
+      <div class="flex justify-center items-center gap-2 h-full">
+        <button
+          onClick={() => handleReadMore(entry)}
+          class="text-rose-700 border border-rose-700 hover:bg-rose-100 font-medium rounded-lg text-xs px-3 py-1.5 transition-colors"
+        >
+          Read More
+        </button>
+        <button
+          onClick={() => handleEditMood(entry)}
+          class="text-rose-700 border border-rose-700 hover:bg-rose-100 font-medium rounded-lg text-xs px-3 py-1.5 transition-colors"
+        >
+          Edit
+        </button>
+        <button
+          onClick={() => handleDeleteMood(entry.id)}
+          class="text-white bg-rose-700 hover:bg-rose-800 font-medium rounded-lg text-xs px-3 py-1.5 transition-colors ml-2"
+        >
+          Delete
+        </button>
+      </div>
+    );
+  };
+
+  // Custom cell renderer for date
+  const DateCellRenderer = (params: any) => {
+    return <div class="flex items-center justify-center h-full text-center">{params.data.date}</div>;
+  };
+
+  // Column definitions for AG Grid
+  const columnDefs: any[] = [
+    {
+      headerName: 'Date',
+      field: 'date',
+      flex: 1,
+      cellRenderer: DateCellRenderer,
+      cellStyle: { 
+        textAlign: 'center',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      },
+      headerClass: 'ag-header-cell-center'
+    },
+    {
+      headerName: 'Mood',
+      field: 'mood',
+      flex: 2,
+      cellRenderer: MoodCellRenderer,
+      cellStyle: { 
+        textAlign: 'center',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      },
+      headerClass: 'ag-header-cell-center'
+    },
+    {
+      headerName: 'Notes',
+      field: 'notes',
+      flex: 2,
+      cellRenderer: NotesCellRenderer,
+      cellStyle: { 
+        textAlign: 'center',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      },
+      headerClass: 'ag-header-cell-center'
+    },
+    {
+      headerName: 'Action',
+      field: 'actions',
+      flex: 3,
+      cellRenderer: ActionsCellRenderer,
+      sortable: false,
+      filter: false,
+      cellStyle: { 
+        textAlign: 'center',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      },
+      headerClass: 'ag-header-cell-center'
+    }
+  ];
+
+  const onGridReady = (params: any) => {
+    setGridApi(params.api);
   };
 
   return (
@@ -232,7 +345,6 @@ const Mood: Component = () => {
         <div class={`transition-all duration-1000 ${isVisible() ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
           <div class="flex justify-between items-center mb-6">
             <h1 class="text-3xl md:text-4xl font-bold text-rose-700">Mood Tracker</h1>
-            {/* Back button when editing from calendar */}
             {(location.state as LocationState | undefined)?.isEditing && (
               <button
                 onClick={() => navigate('/calendar')}
@@ -312,68 +424,51 @@ const Mood: Component = () => {
             {loading() ? (
               <div class="text-gray-600">Loading...</div>
             ) : (
-              <div class="relative overflow-x-auto shadow-md sm:rounded-lg">
-                <table class="w-full text-sm text-left rtl:text-right text-gray-500">
-                  <thead class="text-xs text-gray-700 uppercase bg-gray-50">
-                    <tr>
-                      <th scope="col" class="px-6 py-3 text-center">Date</th>
-                      <th scope="col" class="px-6 py-3 text-center">Mood</th>
-                      <th scope="col" class="px-6 py-3 text-center">Notes</th>
-                      <th scope="col" class="px-6 py-3 text-center">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {moodHistory().length > 0 ? (
-                      moodHistory().map((entry) => (
-                        <tr class="bg-white/50 border-b hover:bg-gray-50 transition-colors">
-                          <td class="px-6 py-4 text-center">{entry.date}</td>
-                          <td class="px-6 py-4 text-center">
-                            <span class="text-lg">{entry.emoji}</span>
-                            <span class={`ml-2 ${moodOptions.find(m => m.value === entry.mood)?.textColor}`}>
-                              {moodOptions.find(m => m.value === entry.mood)?.label}
-                            </span>
-                          </td>
-                          <td class="px-6 py-4 text-center max-w-xs truncate">
-                            {entry.notes && entry.notes.length > 30
-                              ? (
-                                <>
-                                  {entry.notes.slice(0, 30)}...
-                                </>
-                              )
-                              : entry.notes
-                            }
-                          </td>
-                          <td class="px-6 py-4 text-center flex justify-center gap-2">
-                            <button
-                              onClick={() => handleReadMore(entry)}
-                              class="text-rose-700 border border-rose-700 hover:bg-rose-100 font-medium rounded-lg text-xs px-3 py-1.5 transition-colors"
-                            >
-                              Read More
-                            </button>
-                            <button
-                              onClick={() => handleEditMood(entry)}
-                              class="text-rose-700 border border-rose-700 hover:bg-rose-100 font-medium rounded-lg text-xs px-3 py-1.5 transition-colors"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDeleteMood(entry.id)}
-                              class="text-white bg-rose-700 hover:bg-rose-800 font-medium rounded-lg text-xs px-3 py-1.5 transition-colors ml-2"
-                            >
-                              Delete
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={4} class="px-6 py-4 text-center text-gray-500">
-                          No mood entries found.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+              <div class="ag-theme-alpine" style={{ height: '400px', width: '100%' }}>
+                <style>{`
+                  .ag-header-cell-center .ag-header-cell-text {
+                    text-align: center !important;
+                    justify-content: center !important;
+                    width: 100%;
+                  }
+                  .ag-header-cell-center {
+                    text-align: center !important;
+                    justify-content: center !important;
+                  }
+                  .ag-theme-alpine .ag-header {
+                    background-color: #f9fafb;
+                    border-bottom: 1px solid #e5e7eb;
+                  }
+                  .ag-theme-alpine .ag-row {
+                    background-color: rgba(255, 255, 255, 0.5);
+                    border-bottom: 1px solid #e5e7eb;
+                  }
+                  .ag-theme-alpine .ag-row:hover {
+                    background-color: #f9fafb;
+                  }
+                  .ag-theme-alpine .ag-root-wrapper {
+                    border: none;
+                    border-radius: 0.5rem;
+                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+                  }
+                  .ag-theme-alpine .ag-cell {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                  }
+                `}</style>
+                <AgGrid
+                  rowData={moodHistory()}
+                  columnDefs={columnDefs}
+                  onGridReady={onGridReady}
+                  animateRows={true}
+                  suppressCellFocus={true}
+                  noRowsOverlayComponent={() => (
+                    <div class="flex items-center justify-center h-full text-gray-500">
+                      No mood entries found.
+                    </div>
+                  )}
+                />
               </div>
             )}
           </div>

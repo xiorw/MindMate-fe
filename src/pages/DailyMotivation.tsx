@@ -158,7 +158,7 @@ const DailyMotivation: Component = () => {
                     <blockquote class="text-gray-800 text-sm md:text-base italic mb-3 leading-relaxed">
                       "{motivation.quote}"
                     </blockquote>
-                    <cite class="text-rose-600 text-sm font-semibold not-italic">
+                    <cite class="text-rose-700 text-sm font-semibold not-italic">
                       — {motivation.author}
                     </cite>
                   </div>

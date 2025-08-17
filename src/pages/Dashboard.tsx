@@ -3,6 +3,9 @@ import { useNavigate, useLocation } from "@solidjs/router";
 import * as am5 from "@amcharts/amcharts5";
 import * as am5xy from "@amcharts/amcharts5/xy";
 import * as am5themes_Animated from "@amcharts/amcharts5/themes/Animated";
+import AgGrid from "ag-grid-solid";
+import "ag-grid-community/styles/ag-grid.css";
+import "ag-grid-community/styles/ag-theme-alpine.css";
 
 const API_URL_MOODS = "https://mindmate-be-production.up.railway.app/api/moods";
 const API_URL_JOURNALS = "https://mindmate-be-production.up.railway.app/api/journals";
@@ -104,14 +107,32 @@ const dailyQuotes = [
     author: "A.A. Milne"
   },
   {
-    text: "The strongest people are not those who show strength in front of us, but those who win battles we know nothing about.",
-    author: "Unknown"
-  },
-  {
     text: "Your present circumstances don't determine where you can go; they merely determine where you start.",
     author: "Nido Qubein"
   }
 ];
+
+// Function to format date for MM-DD-YYYY display
+function formatDateMMDDYYYY(dateStr: string) {
+  if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) return dateStr;
+  const d = new Date(dateStr);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${mm}-${dd}-${yyyy}`;
+}
+
+// Function to get the latest 3 journals sorted by date
+function getLatestJournals(journals: JournalEntry[], count: number = 3): JournalEntry[] {
+  return journals
+    .sort((a, b) => {
+      // Sort by created_at date in descending order (newest first)
+      const dateA = new Date(a.created_at).getTime();
+      const dateB = new Date(b.created_at).getTime();
+      return dateB - dateA;
+    })
+    .slice(0, count);
+}
 
 const Dashboard: Component = () => {
   const navigate = useNavigate();
@@ -129,6 +150,10 @@ const Dashboard: Component = () => {
   const [error, setError] = createSignal<string | null>(null);
   const [user, setUser] = createSignal<UserProfile | null>(null);
   const [tokenProcessed, setTokenProcessed] = createSignal(false);
+  
+  // Journal popup states
+  const [selectedJournal, setSelectedJournal] = createSignal<JournalEntry | null>(null);
+  const [isPopupOpen, setIsPopupOpen] = createSignal(false);
   
   let chartDiv: HTMLDivElement | undefined;
   let intervalId: number | undefined;
@@ -223,6 +248,26 @@ const Dashboard: Component = () => {
       setCurrentTime(new Date());
     }, 1000);
   });
+
+  // Popup overflow control
+  createEffect(() => {
+    if (isPopupOpen()) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'auto';
+    }
+  });
+
+  // Journal popup functions
+  const openJournalPopup = (journal: JournalEntry) => {
+    setSelectedJournal(journal);
+    setIsPopupOpen(true);
+  };
+
+  const closePopup = () => {
+    setIsPopupOpen(false);
+    setSelectedJournal(null);
+  };
 
   // Fetch data from backend - ONLY run after token is processed
   createEffect(() => {
@@ -348,7 +393,11 @@ const Dashboard: Component = () => {
       if (data) {
         const journals = Array.isArray(data) ? data : data.journals || [];
         console.log("Loaded", journals.length, "journal entries");
-        setRecentJournals(journals.slice(0, 3)); // Get latest 3 journals
+        
+        // Get the latest 3 journals sorted by created_at date
+        const latestJournals = getLatestJournals(journals, 3);
+        setRecentJournals(latestJournals);
+        console.log("Set recent journals:", latestJournals.length, "entries (latest by date)");
         
         // Calculate journal streak
         calculateJournalStreak(journals);
@@ -789,6 +838,101 @@ const Dashboard: Component = () => {
     return new Date(dateStr).toLocaleDateString();
   };
 
+  // AG Grid cell renderers for journal entries
+  const TitleCellRenderer = (params: any) => {
+    return (
+      <div class="flex items-center justify-center h-full text-center font-medium text-gray-900">
+        {params.data.title}
+      </div>
+    );
+  };
+
+  const DateCellRenderer = (params: any) => {
+    return (
+      <div class="flex items-center justify-center h-full text-center">
+        {formatDateMMDDYYYY(params.data.created_at)}
+      </div>
+    );
+  };
+
+  const PreviewCellRenderer = (params: any) => {
+    const content = params.data.content;
+    const preview = content.length > 40 ? content.slice(0, 40) + "..." : content;
+    return <div class="flex items-center justify-center h-full text-center max-w-xs truncate">{preview}</div>;
+  };
+
+  const ActionsCellRenderer = (params: any) => {
+    const journal = params.data;
+    return (
+      <div class="flex justify-center items-center gap-2 h-full">
+        <button
+          onClick={() => openJournalPopup(journal)}
+          class="text-rose-700 border border-rose-700 hover:bg-rose-100 font-medium rounded-lg text-xs px-3 py-1.5 transition-colors"
+        >
+          Read
+        </button>
+      </div>
+    );
+  };
+
+  // Column definitions for AG Grid - More compact
+  const columnDefs: any[] = [
+    {
+      headerName: 'Title',
+      field: 'title',
+      flex: 1.5,
+      cellRenderer: TitleCellRenderer,
+      cellStyle: { 
+        textAlign: 'center',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      },
+      headerClass: 'ag-header-cell-center'
+    },
+    {
+      headerName: 'Date',
+      field: 'created_at',
+      flex: 0.8,
+      cellRenderer: DateCellRenderer,
+      cellStyle: { 
+        textAlign: 'center',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      },
+      headerClass: 'ag-header-cell-center'
+    },
+    {
+      headerName: 'Preview',
+      field: 'content',
+      flex: 1.5,
+      cellRenderer: PreviewCellRenderer,
+      cellStyle: { 
+        textAlign: 'center',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      },
+      headerClass: 'ag-header-cell-center'
+    },
+    {
+      headerName: 'Action',
+      field: 'actions',
+      flex: 0.7,
+      cellRenderer: ActionsCellRenderer,
+      sortable: false,
+      filter: false,
+      cellStyle: { 
+        textAlign: 'center',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      },
+      headerClass: 'ag-header-cell-center'
+    }
+  ];
+
   return (
     <div class="min-h-screen bg-gradient-to-br from-rose-50 to-pink-50 flex flex-col">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow">
@@ -861,9 +1005,11 @@ const Dashboard: Component = () => {
             <div class="max-w-sm p-6 bg-white/80 border border-gray-200 rounded-lg shadow-lg backdrop-blur-xl hover:shadow-xl transition-all duration-300">
               <div class="flex items-center mb-4">
                 <div class="inline-flex items-center justify-center w-10 h-10 text-white bg-gradient-to-r from-orange-400 to-orange-500 rounded-lg">
-                  <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                    <path fill-rule="evenodd" d="M3 12a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm1.293-5.707a1 1 0 011.414 0L8 8.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
-                  </svg>
+                  <img 
+                    src="https://cdn.jsdelivr.net/npm/lucide@latest/icons/book-open.svg" 
+                    alt="Journal Icon" 
+                    class="w-5 h-5 filter invert brightness-0"
+                  />
                 </div>
                 <div class="ml-3">
                   <h5 class="mb-1 text-lg font-medium text-gray-800">Journal Streak</h5>
@@ -926,63 +1072,77 @@ const Dashboard: Component = () => {
                 ></div>
               </div>
 
-              {/* Recent Journal Entries */}
+              {/* Recent Journal Entries with AG Grid - Made more compact */}
               <div class="max-w-full p-6 bg-white/80 border border-gray-200 rounded-lg shadow-lg backdrop-blur-xl">
                 <div class="flex items-center justify-between mb-6">
                   <h5 class="text-xl font-medium text-gray-800">Recent Journal Entries</h5>
                   <button 
-                    onClick={() => navigate('/journal/create')}
-                    class="text-white bg-rose-700 hover:shadow-lg hover:scale-105 focus:ring-4 focus:outline-none focus:ring-rose-200 font-medium rounded-lg text-sm px-5 py-2.5 text-center me-2 mb-2 transition-all duration-300"
+                    onClick={() => navigate('/journal')}
+                    class="inline-flex items-center px-3 py-2 text-sm font-medium text-center text-rose-700 hover:text-rose-900 focus:ring-4 focus:outline-none focus:ring-rose-200 rounded-lg"
                   >
-                    New Entry
+                    View All
+                    <svg class="rtl:rotate-180 w-3.5 h-3.5 ms-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 14 10">
+                      <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M1 5h12m0 0L9 1m4 4L9 9"/>
+                    </svg>
                   </button>
                 </div>
 
                 {loading() ? (
                   <div class="text-gray-600">Loading...</div>
                 ) : (
-                  <div class="relative overflow-x-auto shadow-md sm:rounded-lg">
-                    <table class="w-full text-sm text-left rtl:text-right text-gray-600">
-                      <thead class="text-xs text-gray-700 uppercase bg-gray-50">
-                        <tr>
-                          <th scope="col" class="px-6 py-3">Title</th>
-                          <th scope="col" class="px-6 py-3">Date</th>
-                          <th scope="col" class="px-6 py-3">Preview</th>
-                          <th scope="col" class="px-6 py-3">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {recentJournals().length > 0 ? (
-                          recentJournals().map((journal) => (
-                            <tr class="bg-white/50 border-b hover:bg-gray-50 transition-colors">
-                              <th scope="row" class="px-6 py-4 font-medium text-gray-800 whitespace-nowrap">
-                                {journal.title}
-                              </th>
-                              <td class="px-6 py-4">
-                                {formatJournalDate(journal.created_at)}
-                              </td>
-                              <td class="px-6 py-4 max-w-xs truncate">
-                                {journal.content.length > 50 ? journal.content.slice(0, 50) + "..." : journal.content}
-                              </td>
-                              <td class="px-6 py-4">
-                                <button 
-                                  onClick={() => navigate(`/journal/${journal.id}`)}
-                                  class="font-medium text-rose-700 hover:text-rose-900 hover:underline"
-                                >
-                                  Read
-                                </button>
-                              </td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={4} class="px-6 py-4 text-center text-gray-500">
-                              No journal entries found.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
+                  <div class="ag-theme-alpine" style={{ height: '200px', width: '100%' }}>
+                    <style>{`
+                      .ag-header-cell-center .ag-header-cell-text {
+                        text-align: center !important;
+                        justify-content: center !important;
+                        width: 100%;
+                      }
+                      .ag-header-cell-center {
+                        text-align: center !important;
+                        justify-content: center !important;
+                      }
+                      .ag-theme-alpine .ag-header {
+                        background-color: #f9fafb;
+                        border-bottom: 1px solid #e5e7eb;
+                        font-size: 12px;
+                        font-weight: 600;
+                      }
+                      .ag-theme-alpine .ag-row {
+                        background-color: rgba(255, 255, 255, 0.5);
+                        border-bottom: 1px solid #e5e7eb;
+                        font-size: 12px;
+                      }
+                      .ag-theme-alpine .ag-row:hover {
+                        background-color: #f9fafb;
+                      }
+                      .ag-theme-alpine .ag-root-wrapper {
+                        border: none;
+                        border-radius: 0.5rem;
+                        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+                      }
+                      .ag-theme-alpine .ag-cell {
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        padding: 6px 8px;
+                      }
+                      .ag-theme-alpine .ag-header-cell {
+                        padding: 8px 6px;
+                      }
+                    `}</style>
+                    <AgGrid
+                      rowData={recentJournals()}
+                      columnDefs={columnDefs}
+                      animateRows={true}
+                      suppressCellFocus={true}
+                      rowHeight={40}
+                      headerHeight={35}
+                      noRowsOverlayComponent={() => (
+                        <div class="flex items-center justify-center h-full text-gray-500 text-sm">
+                          No journal entries found. Start writing!
+                        </div>
+                      )}
+                    />
                   </div>
                 )}
               </div>
@@ -1041,6 +1201,33 @@ const Dashboard: Component = () => {
           </div>
         </div>
       </div>
+
+      {/* Journal Popup Modal */}
+      {isPopupOpen() && selectedJournal() && (
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div class="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full relative">
+            <button
+              onClick={closePopup}
+              class="absolute top-3 right-3 text-gray-400 hover:text-rose-700"
+              title="Close"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <div class="mb-4">
+              <span class="font-medium">Title:</span> {selectedJournal()!.title}
+            </div>
+            <div class="mb-2">
+              <span class="font-medium">Date:</span> {formatDateMMDDYYYY(selectedJournal()!.created_at)}
+            </div>
+            <div class="mb-2">
+              <span class="font-medium">Content:</span>
+              <div class="mt-1 whitespace-pre-line break-words">{selectedJournal()!.content}</div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

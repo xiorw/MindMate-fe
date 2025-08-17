@@ -93,10 +93,9 @@ const Statistics: Component = () => {
   let journalRoot: am5.Root | undefined;
 
   const periodOptions = [
-    { value: 'recent', label: 'Recent (Last 7 days)', days: 7 },
+    { value: 'recent', label: 'Recent', days: 1 },
     { value: 'last_3_days', label: 'Last 3 days', days: 3 },
     { value: 'last_7_days', label: 'Last 7 days', days: 7 },
-    { value: 'last_month', label: 'Last Month', days: 30 },
     { value: 'last_30_days', label: 'Last 30 days', days: 30 },
     { value: 'all_time', label: 'All Time', days: 365 }
   ];
