@@ -20,6 +20,21 @@ const Login: Component = () => {
 
   const successMessage = new URLSearchParams(location.search).get("success") === "1";
 
+  // Load saved credentials on mount
+  onMount(() => {
+    const savedEmail = localStorage.getItem("rememberedEmail");
+    const savedPassword = localStorage.getItem("rememberedPassword");
+    const wasRemembered = localStorage.getItem("rememberMe") === "true";
+    
+    if (wasRemembered && savedEmail) {
+      setEmail(savedEmail);
+      setRememberMe(true);
+      if (savedPassword) {
+        setPassword(savedPassword);
+      }
+    }
+  });
+
   createEffect(() => {
     setTimeout(() => setIsVisible(true), 50);
   });
@@ -74,10 +89,21 @@ const Login: Component = () => {
         return;
       }
 
-      // Simpan token ke localStorage (atau sessionStorage)
+      // Save token and user data
       if (result.token) {
         localStorage.setItem("token", result.token);
         localStorage.setItem("user", JSON.stringify(result.user));
+      }
+
+      // Handle remember me functionality
+      if (rememberMe()) {
+        localStorage.setItem("rememberedEmail", email());
+        localStorage.setItem("rememberedPassword", password());
+        localStorage.setItem("rememberMe", "true");
+      } else {
+        localStorage.removeItem("rememberedEmail");
+        localStorage.removeItem("rememberedPassword");
+        localStorage.removeItem("rememberMe");
       }
 
       setIsLoading(false);
@@ -211,14 +237,14 @@ const Login: Component = () => {
 
                 {/* Remember me and forgot password */}
                 <div class="flex items-center justify-between py-2">
-                  <label class="flex items-center">
+                  <label class="flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={rememberMe()}
                       onChange={(e) => setRememberMe(e.currentTarget.checked)}
-                      class="w-4 h-4 border-gray-200 rounded focus:ring-rose-400"
+                      class="w-4 h-4 border-gray-200 rounded focus:ring-rose-400 text-rose-600"
                     />
-                    <span class="ml-3 text-sm text-gray-600">Remember me</span>
+                    <span class="ml-3 text-sm text-gray-600 select-none">Remember me</span>
                   </label>
                   <button
                     type="button"

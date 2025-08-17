@@ -15,7 +15,7 @@ const Register: Component = () => {
   });
   const [showPassword, setShowPassword] = createSignal(false);
   const [showConfirmPassword, setShowConfirmPassword] = createSignal(false);
-  const [agreeTerms, setAgreeTerms] = createSignal(false);
+  const [isGenderFocused, setIsGenderFocused] = createSignal(false);
   const [errors, setErrors] = createSignal<{ [key: string]: string }>({});
   const [isLoading, setIsLoading] = createSignal(false);
   const [isVisible, setIsVisible] = createSignal(false);
@@ -58,7 +58,6 @@ const Register: Component = () => {
     else if (+data.age < 13 || +data.age > 100) newErrors.age = "Age must be 13–100 years";
 
     if (!data.gender) newErrors.gender = "Gender is required";
-    if (!agreeTerms()) newErrors.terms = "You must agree to the terms & conditions";
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -187,6 +186,8 @@ const Register: Component = () => {
                   <select
                     value={formData().gender}
                     onChange={(e) => updateFormData("gender", (e.target as HTMLSelectElement).value)}
+                    onFocus={() => setIsGenderFocused(true)}
+                    onBlur={() => setIsGenderFocused(false)}
                     class={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none appearance-none pr-10 ${
                       errors().gender ? "border-rose-900" : "border-gray-200 focus:border-rose-700"
                     }`}
@@ -197,7 +198,9 @@ const Register: Component = () => {
                     <option value="other">Other</option>
                   </select>
                   <svg
-                    class="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
+                    class={`absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 transition-transform duration-200 ease-in-out ${
+                      isGenderFocused() ? 'rotate-180' : 'rotate-0'
+                    }`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -227,19 +230,6 @@ const Register: Component = () => {
               onInput={(e) => updateFormData("confirmPassword", (e.target as HTMLInputElement).value)}
             />
 
-            <div class="flex items-start gap-2">
-              <input
-                id="terms"
-                type="checkbox"
-                checked={agreeTerms()}
-                onChange={(e) => setAgreeTerms((e.target as HTMLInputElement).checked)}
-                class="mt-1 w-4 h-4 text-rose-600 border-gray-200 rounded focus:ring-rose-400"
-              />
-              <label for="terms" class="text-sm text-gray-600">
-                I agree to the <span class="text-rose-700 hover:text-rose-900 hover:underline">Terms & Conditions</span>
-              </label>
-            </div>
-            {errors().terms && <p class="text-rose-900 text-sm">{errors().terms}</p>}
             {errors().api && <p class="text-rose-900 text-sm">{errors().api}</p>}
 
             <button
